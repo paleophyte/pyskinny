@@ -5,14 +5,15 @@
 > Didn’t IP Telephony die like 10 years ago? **Allegedly.**  
 > But *on the off chance* you’re here for exactly that… **you’ve come to the right place.**
 
-pyskinny is a grab-bag of practical scripts for poking at **old-school CUCM/CallManager (4.x)**: AXL v1 SOAP, SQL via AXL, real-time snapshots via the RTMT **ASTIsapi** endpoints, and direct **79xx phone control** (screenshots + button presses).
+pyskinny includes both a SCCP Client and a grab-bag of practical scripts for poking at **old-school CUCM/CallManager (4.x)**: AXL v1 SOAP, SQL via AXL, real-time snapshots via the RTMT **ASTIsapi** endpoints, and direct **79xx phone control** (screenshots + button presses).
 
 ---
 
 ## What’s inside
 
 - **SCCP 'Softphone' Client**
-  - Macro-mode and Cisco-esque CLI mode
+  - Macro Mode
+  - Cisco-esque CLI mode
 - **CallManager 4.1 AXL v1 SOAP helpers**
   - `listPhoneByName` / `listPhoneByDescription`
   - `executeSQLQuery` with a **smart rewrite** to safely expand `Device.*` (avoids the XML LOB column)
@@ -34,8 +35,7 @@ pyskinny is a grab-bag of practical scripts for poking at **old-school CUCM/Call
   ```bash
   pip install -r requirements.txt
   ```
-- For AXL SQL only: no DB driver needed (we use SOAP).
-- Tested only on CallManager 4.1(3). Will it work on other version? **Unlikely.**
+- Note: Tested only with CallManager 4.1(3). Will it work on other versions? **Unlikely.**
 
 ---
 
@@ -53,10 +53,26 @@ pip install -r requirements.txt
 #### Macro-mode CLI SCCP Client
 ```bash
 # Using a macro file
-python -m examples.run_macro -vvvv --server <server_ip_or_hostname> --mac <device_mac_address> --model <device_model_number> --macro-file examples/ivr.macro
+python -m examples.run_macro --server <server_ip_or_hostname> --mac <device_mac_address> --model <device_model_number> --macro-file examples/ivr.macro
+2025-09-05 11:35:13,643 [MESSAGE] ui.macro_cli          : Executing: ON_DISCONNECT ['GOTO', 'TOP']
+2025-09-05 11:35:13,643 [MESSAGE] ui.macro_cli          : Executing: WAIT_CALL ['0', 'RING']
+2025-09-05 11:35:13,643 [MESSAGE] ui.macro_cli          : Press 'q' to quit
+2025-09-05 11:35:25,031 [MESSAGE] ui.macro_cli          : Executing: SOFTKEY ['Answer']
+2025-09-05 11:35:25,534 [MESSAGE] ui.macro_cli          : Executing: GOTO ['MENU']
+2025-09-05 11:35:25,534 [MESSAGE] ui.macro_cli          : Executing: PLAY ['media/main_menu.wav']
+2025-09-05 11:35:25,542 [MESSAGE] ui.macro_cli          : Executing: WAIT_DIGIT ['0']
+2025-09-05 11:35:34,450 [MESSAGE] ui.macro_cli          : Executing: SWITCH ['last_digit', '1:SERVICE;2:SUPPORT;3:EXT_DIAL;9:MENU;DEFAULT:MENU']
+2025-09-05 11:35:34,450 [MESSAGE] ui.macro_cli          : Executing: PLAY ['media/customer_service.wav']
+2025-09-05 11:35:34,454 [MESSAGE] ui.macro_cli          : Executing: WAIT_DIGIT ['0']
+2025-09-05 11:35:45,351 [MESSAGE] ui.macro_cli          : Executing: WAIT_CALL ['0', 'RING']
+2025-09-05 11:35:45,351 [MESSAGE] ui.macro_cli          : Press 'q' to quit
 
 # Using a macro from the CLI
-python -m examples.run_macro -vvvv --server <server_ip_or_hostname> --mac <device_mac_address> --model <device_model_number> --macro "WAIT 2,CALL 1006,WAIT 10,SOFTKEY EndCall"
+python -m examples.run_macro -vvvv --server <server_ip_or_hostname> --mac <device_mac_address> --model <device_model_number> --macro "WAIT 2,CALL 1001,WAIT 10,SOFTKEY EndCall"
+2025-09-05 11:37:38,817 [MESSAGE] ui.macro_cli          : Executing: WAIT ['2']
+2025-09-05 11:37:40,822 [MESSAGE] ui.macro_cli          : Executing: CALL ['1001']
+2025-09-05 11:37:43,344 [MESSAGE] ui.macro_cli          : Executing: WAIT ['10']
+2025-09-05 11:37:53,349 [MESSAGE] ui.macro_cli          : Executing: SOFTKEY ['EndCall']
 ```
 
 ### examples/run_cli.py
@@ -102,6 +118,14 @@ phone# exit
 
 ```bash
 python tools/callmanager.py --server <server_ip_or_hostname> --user administrator --pass <windows_admin_password> --mode name --pattern 'SEP%' --json --pretty
+[
+    {
+        "pkid": "b4fa8ba2-ccc1-419b-9c3b-a447d0ab3604",
+        "name": "SEP333344445555",
+        "product": "Cisco 7971",
+        "model": "Cisco 7971"
+    }
+]
 ```
 
 #### Run SQL safely (auto-expands Device.*)
@@ -112,6 +136,73 @@ python tools/callmanager.py --server <server_ip_or_hostname> --user administrato
          JOIN DeviceNumPlanMap m ON m.fkDevice = d.pkid
          JOIN NumPlan n ON n.pkid = m.fkNumPlan
          ORDER BY d.Name" --pretty
+[
+  {
+    "pkid": "{B4FA8BA2-CCC1-419B-9C3B-A447D0AB3604}",
+    "Name": "SEP333344445555",
+    "Description": "SEP333344445555",
+    "tkModel": "119",
+    "tkDeviceProtocol": "0",
+    "tkProtocolSide": "1",
+    "SpecialLoadInformation": "",
+    "fkDevicePool": "{F71F52BC-B6C9-4968-8A86-DCDA3EEC3DD7}",
+    "fkPhoneTemplate": "{9C9F4E1E-7879-4AD0-842F-A0F253864260}",
+    "AssocPC": "",
+    "fkCallingSearchSpace": "{96B5C16D-68B7-41FF-960F-36990DB223EC}",
+    "CtiID": "1942436578",
+    "tkClass": "1",
+    "AddOnModules": "0",
+    "fkProcessNode": "",
+    "DefaultDTMFCapability": "0",
+    "fkLocation": "{C8185284-D1D9-4FD5-9D7B-6ED6BB0F646C}",
+    "tkProduct": "119",
+    "DialPlanWizardGenID": "",
+    "DeviceLevelTraceFlag": "0",
+    "LoginUserid": "",
+    "LoginTime": "",
+    "AllowHotelingFlag": "0",
+    "tkDeviceProfile": "0",
+    "ikDevice_DefaultProfile": "",
+    "fkMediaResourceList": "{B2E1E3C2-5198-47FC-9F44-B898CD542D2C}",
+    "UserHoldMOHAudioSourceID": "0",
+    "NetworkHoldMOHAudioSourceID": "0",
+    "LoginDuration": "",
+    "Unit": "0",
+    "SubUnit": "0",
+    "VersionStamp": "{1EF073B9-5898-4109-B1C7-96F4969B5A4C}",
+    "tkCountry": "",
+    "ikDevice_CurrentLoginProfile": "",
+    "tkUserLocale": "",
+    "tkProduct_Base": "",
+    "fkCallingSearchSpace_AAR": "",
+    "fkAARNeighborhood": "",
+    "fkSoftkeyTemplate": "",
+    "retryVideoCallAsAudio": "1",
+    "RouteListEnabled": "",
+    "fkCallManagerGroup": "",
+    "tkStatus_MLPPIndicationStatus": "2",
+    "tkPreemption": "2",
+    "MLPPDomainID": "-1",
+    "tkStatus_CallInfoPrivate": "2",
+    "tkStatus_BuiltInBridge": "2",
+    "tkQSIG": "4",
+    "tkDeviceSecurityMode": "0",
+    "V150ModemRelayCapable": "0",
+    "tkNetworkLocation": "0",
+    "ignorePI": "0",
+    "tkPacketCaptureMode": "0",
+    "PacketCaptureDuration": "60",
+    "AuthenticationString": "",
+    "tkAuthenticationMode": "1",
+    "tkCertificateStatus": "1",
+    "tkKeySize": "2",
+    "tkCertificateOperation": "1",
+    "UpgradeFinishTime": "",
+    "tkCertificate": "0",
+    "msrepl_tran_version": "{4895266D-F371-49FA-8818-12CAC83FE7C7}",
+    "DNOrPattern": "1006"
+  }
+]
 ```
 
 > Tip: `--no-rewrite` disables the safety net if you really want raw SQL.
@@ -120,6 +211,26 @@ python tools/callmanager.py --server <server_ip_or_hostname> --user administrato
 
 ```bash
 python tools/callmanager.py --server 10.0.0.180   --user administrator --pass <windows_admin_password> --ris --pretty
+{
+  "node": "CUCM4",
+  "totalDevices": 1,
+  "devices": [
+    {
+      "name": "SEP333344445555",
+      "ip": "192.168.100.195",
+      "dirNumber": "1006",
+      "status_enum": 2,
+      "status": "Unregistered",
+      "model_enum": 119,
+      "model": "Cisco 7971",
+      "product_enum": 119,
+      "product": "Cisco 7971",
+      "perfmonObject": 2,
+      "timestamp_raw": "1757065587",
+      "timestamp_iso": "2025-09-05T09:46:27Z"
+    }
+  ]
+}
 ```
 
 ---
@@ -198,10 +309,12 @@ python tools/cme.py --host <cme_ip_or_hostname> --username <router_username> --p
 
 ---
 
-## Roadmap / TODO
-
-- [ ] Map **Model/Product** enums → names automatically (via TypeModel/TypeProduct SQL)
-- [ ] Add **Perfmon** probes (Get counters, collect snapshots)
+## Roadmap / TODO / Ideas
+- [ ] Add ability to answer calls (and implement auto-answer) to run_cli.py
+- [ ] Try to add better call handling to run_cli.py (or to base SCCPClient). It's currently very difficult to manage multiple calls (i.e., place a call on hold and then dial a second number)
+- [ ] CallManager simulator (lightweight CM server that phones can register to)
+- [ ] SIP phone support
+- [ ] Console based "GUI" SCCP Client
 - [ ] Wrap into a small **package** (`pip install pyskinny`)
 - [ ] Optional TUI/mini web UI for screenshots + actions
 
