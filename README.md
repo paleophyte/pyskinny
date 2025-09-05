@@ -285,9 +285,6 @@ python tools/cme.py --host <cme_ip_or_hostname> --username <router_username> --p
 python tools/cme.py --host <cme_ip_or_hostname> --username <router_username> --password <router_password> --transport telnet add-phone --json <filename.json> --mac 4444.5555.6666 --model 7970 --commit
 ```
 
-> Enable **Web Access = Enabled** on the phone in CUCM.  
-> In order for auth to work, you'll need to associate a user to the device in CallManager, then you can authenticate with those user credentials.
-
 ---
 
 ## Compatibility notes
