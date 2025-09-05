@@ -1,0 +1,31 @@
+# Callee (IVR)
+ON_DISCONNECT GOTO TOP
+TOP:
+WAIT_CALL 0 RING
+SOFTKEY Answer
+GOTO MENU
+
+MENU:
+PLAY media/main_menu.wav
+WAIT_DIGIT 0
+SWITCH last_digit 1:SERVICE;2:SUPPORT;3:EXT_DIAL;9:MENU;DEFAULT:MENU
+
+SERVICE:
+PLAY media/customer_service.wav
+# Should be a transfer sequence
+WAIT_DIGIT 0
+GOTO MENU
+
+SUPPORT:
+PLAY media/technical_support.wav
+# Should be a transfer sequence
+WAIT_DIGIT 0
+GOTO MENU
+
+EXT_DIAL:
+PLAY media/extension_dial.wav
+GETDIGITS extension 4 0
+# Should be a transfer sequence
+GOTO MENU
+
+GOTO TOP

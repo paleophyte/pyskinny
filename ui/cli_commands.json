@@ -1,0 +1,52 @@
+[
+  {"command":"connect",           "help":"Connect using saved config",    "function":"exec_connect"},
+  {"command":"disconnect",        "help":"Disconnect from CUCM",          "function":"exec_disconnect"},
+  {"command":"save",              "help":"Save configuration",            "function":"exec_save"},
+  {"command":"load",              "help":"Load configuration",            "function":"exec_load"},
+  {"command":"set",               "help":"Set a configuration parameter",                                                             "subcommands":[
+    {"command":"auto_answer",     "help":"Auto Answer",                                                                               "subcommands":[
+      {"command":"%W",                                                    "function":"exec_auto_answer"}]},
+    {"command":"auto_connect",    "help":"Auto Connect",                                                                              "subcommands":[
+      {"command":"%W",                                                    "function":"exec_auto_connect"}]},
+    {"command":"mac",             "help":"Device MAC",                                                                                "subcommands":[
+      {"command":"%W",                                                    "function":"exec_set_mac"}]},
+    {"command":"model",           "help":"Phone model",                                                                               "subcommands":[
+      {"command":"%W",                                                    "function":"exec_set_model"}]},
+    {"command":"server",          "help":"CUCM address/host",                                                                         "subcommands":[
+      {"command":"%W",                                                    "function":"exec_set_server"}]},
+    {"command":"enable_cdp",      "help":"Enable CDP TX/RX",                                                                          "subcommands":[
+      {"command":"%W",                                                    "function":"exec_set_cdp"}]},
+    {"command":"enable_lldp",     "help":"Enable LLDP TX/RX",                                                                         "subcommands":[
+      {"command":"%W",                                                    "function":"exec_set_lldp"}]},
+    {"command":"enable_lsp",      "help":"Enable Meraki LSP Polling",                                                                 "subcommands":[
+      {"command":"%W",                                                    "function":"exec_set_lsp"}]}
+  ]},
+  {"command": "phone",            "help": "Softphone commands",                                                                       "subcommands": [
+    {"command": "call",           "help": "Dial an extension or phone number",                                                        "subcommands": [
+      {"command": "%W",           "help": "Extension or phone number",    "function": "exec_call_number"}
+    ]},
+    {"command": "send",           "help": "Send skinny message to call manager",                                                      "subcommands": [
+      {"command": "softkeyevent", "help": "Send softkeyevent message",                                                                "subcommands": [
+        {"command": "%W",         "help": "Softkey name",                                                         "optional": false,  "subcommands": [
+          {"command": "%W",       "help": "Line number",                                                          "optional": true,   "subcommands": [
+            {"command": "%W",     "help": "Call reference (call_id)",     "function": "exec_send_softkeyevent",   "optional": true}
+          ]}
+        ]}
+      ]},
+      {"command": "digit",        "help": "Send phone digit",                                                                         "subcommands": [
+        {"command": "%W",         "help": "Digit (0-9,*,#)",              "function": "exec_send_digit",          "optional": false}
+      ]}
+    ]}
+  ]},
+  {"command": "show",             "help": "Show information for a given object",                                                      "subcommands": [
+    {"command":"config",          "help": "Show configuration",           "function":"exec_show_config"},
+    {"command": "calls",          "help": "Show current calls",           "function": "exec_show_calls"},
+    {"command": "state",          "help": "Show system state",            "function": "exec_show_state_obj",                          "subcommands": [
+      {"command": "%W",           "help": "Show specific system state",   "function": "exec_show_state_obj",      "optional": false}
+    ]},
+    {"command": "topology",       "help": "Show network topology",        "function": "exec_command_topology",                        "subcommands": [
+      {"command": "detail",       "help": "Show detailed topology data",  "function": "exec_command_topology",    "optional": true}
+    ]}
+  ]},
+  {"command": "exit", "help": "Exit command mode"}
+]
