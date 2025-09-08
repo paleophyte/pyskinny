@@ -56,11 +56,22 @@ def parse_call_state(client, payload):
     call_state_name = CALL_STATE_NAMES.get(call_state, "UNKNOWN")
 
     current_time = datetime.datetime.now(datetime.timezone.utc)
-    client.state.calls[str(call_reference)] = {"call_state": call_state, "call_state_name": call_state_name, "line_instance": line_instance, "call_reference": call_reference, "privacy": privacy, "precedence_level": precedence_level, "precedence_domain": precedence_domain, "current_time": current_time}
+    if str(call_reference) in client.state.calls:
+        call_started = client.state.calls[str(call_reference)]["call_started"]
+        call_ended = client.state.calls[str(call_reference)]["call_ended"]
+    else:
+        call_started = None
+        call_ended = None
+
+    client.state.calls[str(call_reference)] = {"call_state": call_state, "call_state_name": call_state_name, "line_instance": line_instance, "call_reference": call_reference, "privacy": privacy, "precedence_level": precedence_level, "precedence_domain": precedence_domain, "current_time": current_time, "call_started": call_started, "call_ended": call_ended}
     if str(call_reference) not in client.state.calls_list:
         client.state.calls_list.append(str(call_reference))
 
     if call_state in [0, 2]:                        # Idle, OnHook
+        if str(call_reference) in client.state.active_calls_list:
+            client.state.active_calls_list.remove(str(call_reference))
+
+        client.state.calls[str(call_reference)]["call_ended"] = current_time
         client.state.active_call = False
         client.state.call_active = False
         client.state.call_connected = False
@@ -73,12 +84,20 @@ def parse_call_state(client, payload):
         else:
             client.events.call_ended.clear()
     elif call_state in [3, 4]:                      # RingOut, RingIn
+        if str(call_reference) not in client.state.active_calls_list:
+            client.state.active_calls_list.append(str(call_reference))
+
         client.state.call_active = True
         client._call_epoch += 1
         client.state.last_call_epoch = client._call_epoch
         client.events.call_ringing.set()
         client.events.call_ended.clear()
     elif call_state in [5,]:                        # Connected
+        if str(call_reference) not in client.state.active_calls_list:
+            client.state.active_calls_list.append(str(call_reference))
+
+        if client.state.calls[str(call_reference)].get("call_started") is None:
+            client.state.calls[str(call_reference)]["call_started"] = current_time
         client.state.call_active = True
         client.state.call_connected = True
         client.events.call_connected.set()
