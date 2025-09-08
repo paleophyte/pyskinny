@@ -267,7 +267,8 @@ def parse_select_softkeys(client, payload):
     lineInstance, callReference, softKeySetIndex, validKeyMask = struct.unpack("<IIII", payload[:16])
     softKeySetIndexName = KEY_SET_INDEX_NAMES.get(softKeySetIndex, "UNKNOWN")
 
-    client.state.selected_softkeys[str(lineInstance)] = {"call_reference": callReference, "softkeyset_index": softKeySetIndex, "softkeyset_index_name": softKeySetIndexName, "validkey_mask": validKeyMask, "validkey_mask_str": f"{validKeyMask:016b}"}
+    # client.state.selected_softkeys[str(lineInstance)] = {"call_reference": callReference, "softkeyset_index": softKeySetIndex, "softkeyset_index_name": softKeySetIndexName, "validkey_mask": validKeyMask, "validkey_mask_str": f"{validKeyMask:016b}"}
+    client.state.selected_softkeys[str(callReference)] = {"line_instance": lineInstance, "call_reference": callReference, "softkeyset_index": softKeySetIndex, "softkeyset_index_name": softKeySetIndexName, "validkey_mask": validKeyMask, "validkey_mask_str": f"{validKeyMask:016b}"}
     client.state.selected_softkey_set = softKeySetIndex
 
     # logger.info(f"({client.state.device_name}) [RECV] SelectSoftKeys lineInstance: {lineInstance}, callReference: {callReference}, softKeySetIndex: {softKeySetIndexName} ({softKeySetIndex}), validKeyMask: {validKeyMask:016b}")
