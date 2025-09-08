@@ -1,10 +1,12 @@
 from utils.client import normalize_mac_address
 from threading import Event
-from messages.generic import get_device_enum
+from messages.generic import get_device_enum, DEVICE_TYPE_MAP
 from datetime import datetime
 import json
 import threading
 import time
+from config import load_config
+from datetime import datetime, timezone
 
 
 class PhoneState:
@@ -15,6 +17,7 @@ class PhoneState:
         self.mac_address = normalize_mac_address(mac)
         self.device_name = "SEP" + self.mac_address
         self.model = get_device_enum(model)
+        self.model_name = DEVICE_TYPE_MAP.get(self.model)
         self.client_ip = None
         self.is_registered = Event()
         self.is_unregistered = Event()
@@ -111,6 +114,10 @@ class PhoneState:
         self.calls = {}
         self.calls_list = []
 
+        # added for softphone
+        self.active_calls_list = []
+        self.selected_call_reference = None
+
         # StartTone
         self.enable_audio = True
         self._audio = None
@@ -203,3 +210,116 @@ class PhoneState:
 
     def to_json(self, indent=2):
         return json.dumps(self.to_dict(), indent=indent)
+
+    def get_current_softkeys(self, keyset_override=None):
+        if self.softkey_set_definition == {} or self.softkey_template == {}:
+            return []
+
+        keys = []
+        if keyset_override:
+            sk_set = keyset_override
+        else:
+            sk_set = self.selected_softkey_set
+        sk_def = self.softkey_set_definition.get(str(sk_set), {})
+        for k, v in sk_def.items():
+            template_index_name = v.get("template_index_name", "")
+            template_index = v.get("template_index", "")
+            template_info_name = v.get("template_info_name", "")
+            info_index = v.get("info_index", "")
+
+            templ_data = self.softkey_template.get(str(template_index), {})
+            label = templ_data.get("label", "")
+            event = templ_data.get("event", "")
+
+            keys.append((label, event))
+
+        return keys
+
+    def _human_elapsed(self, iso_ts_start, iso_ts_end, now=None) -> str:
+        """
+        < 60s       -> "n seconds"
+        60s .. <1h  -> "m:ss"
+        >= 1h       -> "h:mm:ss"
+        Accepts iso_ts as ISO 8601 string or {"current_time": <iso>}.
+        `now` can be None, ISO string, or datetime.
+        """
+        try:
+            # Accept dict input like {"current_time": "..."}
+            # if isinstance(iso_ts, dict) and "current_time" in iso_ts:
+            #     iso_ts = iso_ts["current_time"]
+
+            # Parse start timestamp
+            ts = datetime.fromisoformat(str(iso_ts_start).replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+
+            # Parse end timestamp
+            if iso_ts_end is not None:
+                te = datetime.fromisoformat(str(iso_ts_end).replace("Z", "+00:00"))
+                if ts.tzinfo is None:
+                    te = te.replace(tzinfo=timezone.utc)
+            else:
+                te = None
+
+            # Parse/compute 'now'
+            if now is None:
+                now_dt = datetime.now(timezone.utc)
+            elif isinstance(now, str):
+                now_dt = datetime.fromisoformat(now.replace("Z", "+00:00"))
+                if now_dt.tzinfo is None:
+                    now_dt = now_dt.replace(tzinfo=timezone.utc)
+            elif isinstance(now, datetime):
+                now_dt = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
+            else:
+                raise TypeError(f"'now' must be None, str, or datetime, not {type(now)}")
+
+            # Elapsed (absolute) seconds as int
+            if te is not None:
+                total = int((te - ts).total_seconds())
+            else:
+                total = int((now_dt - ts).total_seconds())
+
+            # total = int((now_dt - ts).total_seconds())
+            if total < 0:
+                total = -total
+
+            # Split safely as ints
+            hours, rem = divmod(total, 3600)
+            minutes, seconds = divmod(rem, 60)
+
+            if total < 60:
+                return f"{seconds} seconds"
+            if hours == 0:
+                return f"{minutes}:{seconds:02d}"
+            return f"{hours}:{minutes:02d}:{seconds:02d}"
+
+        except Exception as e:
+            # Helpful context if something weird sneaks in
+            raise RuntimeError(
+                f"human_elapsed failed for iso_ts={iso_ts_start!r} (type={type(iso_ts_start).__name__}), "
+                f"now={now!r} (type={type(now).__name__})"
+            ) from e
+
+
+def build_state_from_args(args) -> PhoneState:
+    # Prefer a project-specific loader if available (lets you keep your existing config).
+    cfg = None
+    if args.config:
+        cfg = load_config(args.config)
+
+    if cfg:
+        # Try common keys used across the project; fall back if missing.
+        server = cfg.get("server") or args.server
+        mac = cfg.get("mac") or args.mac
+        model = cfg.get("model") or args.model
+    else:
+        server = args.server
+        mac = args.mac
+        model = args.model
+
+    if not server or not mac:
+        raise SystemExit(
+            "Missing required connection details. Provide --model, --server and --mac (or use --config).")
+
+    # Construct a minimal state; your PhoneState likely accepts these kwargs.
+    return PhoneState(server=server, mac=mac, model=model)
