@@ -244,45 +244,6 @@ class SCCPClient:
             self.dtmf.buf.append(ch)
             self.dtmf.event.set()
 
-    # def wait_for_digit(self, timeout=None):
-    #     """Return one digit ('0'-'9','*','#') or None on timeout."""
-    #     end = None if timeout is None else (time.time() + timeout)
-    #     while True:
-    #         with self.dtmf.lock:
-    #             if self.dtmf.buf:
-    #                 ch = self.dtmf.buf.popleft()
-    #                 if not self.dtmf.buf:
-    #                     self.dtmf.event.clear()
-    #                 return ch
-    #         if timeout is None:
-    #             self.dtmf.event.wait()
-    #         else:
-    #             remaining = end - time.time()
-    #             if remaining <= 0:
-    #                 return None
-    #             self.dtmf.event.wait(remaining)
-    #
-    # def read_digits(self, max_len=1, timeout=10.0, terminators="#", interdigit=2.0):
-    #     """
-    #     Read up to max_len digits, waiting up to timeout seconds overall,
-    #     with interdigit max wait per digit and optional terminators ('#' by default).
-    #     """
-    #     s = ""
-    #     deadline = None if timeout is None else (time.time() + timeout)
-    #     while len(s) < max_len:
-    #         wait = None
-    #         if deadline is not None:
-    #             wait = max(0.0, deadline - time.time())
-    #             if interdigit is not None:
-    #                 wait = min(wait, interdigit)
-    #         ch = self.wait_for_digit(wait)
-    #         if ch is None:
-    #             break
-    #         if ch in terminators:
-    #             break
-    #         s += ch
-    #     return s
-
     def wait_for_digit(self, timeout=None, stop_event: threading.Event | None = None, poll: float = 0.1):
         """
         Return one digit or None on timeout. If stop_event is given, returns None early when set.
