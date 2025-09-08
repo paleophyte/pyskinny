@@ -113,6 +113,30 @@ Softkey EndCall (line 1, call 0)
 phone# exit
 ```
 
+### examples/run_console.py
+#### Console based Softphone UI
+```bash
+python -m examples.run_console -vvv --server <server_ip_or_hostname> --mac <device_mac_address> --model <device_model_number>
+
+ SEP222233334444  |  Cisco 7970  |  CUCM: 10.0.0.180                  [ Active Calls ]                                   │ [ Logs ]
+                                                                        16777342  [Connected]    9 seconds               │ [INFO] messages.phone: [RECV] CallInfo
+  Prompt: Connected                                                                                                      │ [INFO] messages.phone: [RECV] StopTone
+                                                                                                                         │ [INFO] messages.phone: [RECV] OpenReceiveChannel
+  Call: ACTIVE   Line: 1   Ref: -                                                                                        │ [INFO] SCCPClient: [RTP RX] listening on 54063
+  Remote:                                                                                                                │ [INFO] messages.phone: [SEND] OpenReceiveChannelAck -> IP: 10.102.219.79, Port:
+                                                                                                                         │  54063, CallRef: 16777342
+  Softkeys (F1..F12):                                                                                                    │ [INFO] messages.phone: [RECV] CallState
+  F1:Hold   F2:EndCall   F3:Trnsfer   F4:Park   F5:Confrn   F6:ConfList   F7:Select   F8:Join   F9:DirTrfr               │ [INFO] messages.capabilities: (SEP222233334444) [RECV] SelectSoftKeys
+  F10:VidMode                                                                                                            │ [INFO] SCCPClient: (SEP222233334444) [PROMPT] 'Connected'
+                                                                                                                         │ [INFO] messages.capabilities: (SEP222233334444) [RECV] DisplayPromptStatus
+                                                                                                                         │ [INFO] messages.phone: [RECV] CallInfo
+                                                                                                                         │ [INFO] messages.phone: [RECV] StopTone
+                                                                                                                         │ [INFO] SCCPClient: [RTP TX] -> 10.102.219.79:65322 PT=0 ptime=20ms sr=8000
+ Digits: 0-9 * #   Vol: +/-   Beep: b   Refresh: r   Quit: q   [/]/{/}/g/G: scroll logs   Ctrl-L: clear logs             │ [INFO] messages.phone: [RECV] StartMediaTransmission
+                                                                                                                         │
+                                                                                                     │
+```
+
 ### tools/callmanager.py
 #### List phones via AXL
 
