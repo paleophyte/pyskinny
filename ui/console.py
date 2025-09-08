@@ -330,7 +330,8 @@ class ConsoleApp:
         # Active Calls panel (left area)
         refs, details = self._active_calls_snapshot()
         self._sync_selected_to_refs(refs)
-        stdscr.addstr(0, 70, "[ Active Calls ]"[: left_w - 4], curses.A_BOLD)
+        left_pos = 70
+        stdscr.addstr(0, left_pos, "[ Active Calls ]"[: left_w - 4], curses.A_BOLD)
         row = 1
         for idx, ref in enumerate(refs[: max(0, h - row - 6)]):
             info = details.get(str(ref), {}) or {}
@@ -350,8 +351,8 @@ class ConsoleApp:
                 dur = self._human_elapsed_local(info.get("call_started"), info.get("call_ended"))
             line_txt = f"{ref}  [{state_name}]  {remote}  {dur}"
             attr = curses.A_REVERSE if idx == self._selected_call_idx else curses.A_NORMAL
-            stdscr.addstr(row, 72, " " * (left_w - 4))
-            stdscr.addstr(row, 72, line_txt[: max(1, left_w - 4)], attr)
+            stdscr.addstr(row, left_pos, " " * (left_w - 4))
+            stdscr.addstr(row, left_pos, line_txt[: max(1, left_w - 4)], attr)
             row += 1
 
         softkeys_row = max(row + 1, 7)
