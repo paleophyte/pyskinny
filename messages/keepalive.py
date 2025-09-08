@@ -11,9 +11,9 @@ def send_keepalive_req(client):
         logging.info(f"({client.state.device_name}) [SEND] KeepAliveReq")
         client.sock.sendall(header)
     except Exception as e:
+        logging.info(f"({client.state.device_name}) [SEND] KeepAliveReq ERROR: {e}")
         client.state.is_unregistered.set()
         client.running = False
-        logging.info(f"({client.state.device_name}) [SEND] KeepAliveReq ERROR: {e}")
 
 
 @register_handler(0x0100, "KeepAliveAck")
