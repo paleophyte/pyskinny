@@ -132,9 +132,8 @@ python -m examples.run_console -vvv --server <server_ip_or_hostname> --mac <devi
                                                                                                                          │ [INFO] messages.phone: [RECV] CallInfo
                                                                                                                          │ [INFO] messages.phone: [RECV] StopTone
                                                                                                                          │ [INFO] SCCPClient: [RTP TX] -> 10.102.219.79:65322 PT=0 ptime=20ms sr=8000
- Digits: 0-9 * #   Vol: +/-   Beep: b   Refresh: r   Quit: q   [/]/{/}/g/G: scroll logs   Ctrl-L: clear logs             │ [INFO] messages.phone: [RECV] StartMediaTransmission
-                                                                                                                         │
-                                                                                                     │
+ Digits: 0-9 * &num;   Vol: +/-   Beep: b   Refresh: r   Quit: q   [/]/{/}/g/G: scroll logs   Ctrl-L: clear logs             │ [INFO] messages.phone: [RECV] StartMediaTransmission
+                                                                                                                         │                                                                                            │
 ```
 
 ### tools/callmanager.py
