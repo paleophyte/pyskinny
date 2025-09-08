@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from client import SCCPClient
 from state import PhoneState
-from ui.cli_config import config_path_from_here, load_config, save_config, is_config_complete
+from config import config_path_from_here, load_config, save_config, is_config_complete
 import logging
 from utils.topology import cdp_sniffer, lldp_sniffer, start_topology_timer, poll_meraki_lsp, find_interface_for_target_ip
 

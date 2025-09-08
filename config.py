@@ -1,23 +1,52 @@
-import json
-import yaml
-from pathlib import Path
+import json, os, tempfile, shutil
 
 
-def load_config(config_path: str) -> dict:
-    path = Path(config_path)
+DEFAULT_CONFIG = {
+    "server": "",
+    "mac":    "",
+    "model":  "",
+    "auto_connect": True    # you can toggle this from CLI if you like
+}
 
-    if not path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
+def config_path_from_here() -> str:
+    # Go up one level from this file, then into examples/cli.config
+    here = os.path.dirname(__file__)                 # current directory
+    if os.path.exists(os.path.join(here, "examples", "cli.config")):
+        return os.path.join(here, "examples", "cli.config")
 
-    ext = path.suffix.lower()
+    parent = os.path.dirname(here)                   # one level up
+    return os.path.join(parent, "examples", "cli.config")
 
+
+def load_config(path: str) -> dict | None:
     try:
-        with path.open("r", encoding="utf-8") as f:
-            if ext == ".json":
-                return json.load(f)
-            elif ext in [".yaml", ".yml"]:
-                return yaml.safe_load(f)
-            else:
-                raise ValueError(f"Unsupported config file format: {ext}")
-    except Exception as e:
-        raise RuntimeError(f"Failed to load config: {e}")
+        with open(path, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        if not isinstance(cfg, dict):
+            return None
+        # ensure all keys exist
+        for k, v in DEFAULT_CONFIG.items():
+            cfg.setdefault(k, v)
+        return cfg
+    except FileNotFoundError:
+        return None
+    except Exception:
+        return None
+
+
+def save_config(path: str, cfg: dict) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = tempfile.NamedTemporaryFile("w", delete=False, dir=os.path.dirname(path), encoding="utf-8")
+    try:
+        json.dump(cfg, tmp, indent=2, sort_keys=True)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp.close()
+        shutil.move(tmp.name, path)
+    finally:
+        try: os.unlink(tmp.name)
+        except Exception: pass
+
+
+def is_config_complete(cfg: dict) -> bool:
+    return bool(cfg.get("server") and cfg.get("mac") and cfg.get("model"))
