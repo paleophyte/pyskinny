@@ -8,14 +8,14 @@ def send_keepalive_req(client):
     msg_id = 0x0000
     header = struct.pack("<I I I", 4, 0, msg_id)
     try:
-        logging.info(f"({client.state.device_name}) [SEND] KeepAliveReq")
+        logger.info(f"({client.state.device_name}) [SEND] KeepAliveReq")
         client.sock.sendall(header)
     except Exception as e:
-        logging.info(f"({client.state.device_name}) [SEND] KeepAliveReq ERROR: {e}")
+        logger.info(f"({client.state.device_name}) [SEND] KeepAliveReq ERROR: {e}")
         client.state.is_unregistered.set()
         client.running = False
 
 
 @register_handler(0x0100, "KeepAliveAck")
 def parse_keep_alive_ack(client, payload):
-    logging.info(f"({client.state.device_name}) [RECV] KeepAliveAck")
+    logger.info(f"({client.state.device_name}) [RECV] KeepAliveAck")
