@@ -41,6 +41,7 @@
   {"command": "show",             "help": "Show information for a given object",                                                      "subcommands": [
     {"command":"config",          "help": "Show configuration",           "function":"exec_show_config"},
     {"command": "calls",          "help": "Show current calls",           "function": "exec_show_calls"},
+    {"command": "softkeys",       "help": "Show available softkeys",      "function": "exec_show_softkeys"},
     {"command": "state",          "help": "Show system state",            "function": "exec_show_state_obj",                          "subcommands": [
       {"command": "%W",           "help": "Show specific system state",   "function": "exec_show_state_obj",      "optional": false}
     ]},
