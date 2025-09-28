@@ -3,7 +3,7 @@ import calendar
 import time
 import datetime
 from dispatcher import register_handler
-from messages.generic import get_skinny_message, send_skinny_message, KEY_SET_INDEX_NAMES, SOFTKEY_TEMPLATE_INDEXES, SOFTKEY_INFO_INDEXES
+from messages.generic import get_skinny_message, send_skinny_message, KEY_SET_INDEX_NAMES, SOFTKEY_TEMPLATE_INDEXES, SOFTKEY_INFO_INDEXES, Buf
 from utils.client import clean_bytes
 import logging
 logger = logging.getLogger(__name__)
@@ -193,7 +193,12 @@ def parse_button_template(client, payload):
 
 @register_handler(0x0108, "SoftKeyTemplateRes")
 def parse_softkey_template(client, payload):
-    softkey_offset, softkey_count, total_softkey_count = struct.unpack("<III", payload[:12])
+    buf = Buf(payload)
+    softkey_offset = buf.read_u32()
+    softkey_count = buf.read_u32()
+    total_softkey_count = buf.read_u32()
+
+    # softkey_offset, softkey_count, total_softkey_count = struct.unpack("<III", payload[:12])
     max_sk = int(len(payload[12:])/20)
 
     logger.info(f"({client.state.device_name}) [RECV] SoftKeyTemplateRes")
@@ -207,16 +212,19 @@ def parse_softkey_template(client, payload):
 
     softkeys = []
     for x in range(softkey_count):
-        offset = 12 + x * 20
-        if offset + 20 > len(payload):
-            logger.warning(f"({client.state.device_name}) [WARN] Softkey {x} exceeds payload length")
-            break
+        softkey_label = buf.read_cstring(16)
+        softkey_event = buf.read_u32()
 
-        label_bytes = payload[offset:offset+16]
-        event_bytes = payload[offset+16:offset+20]
-
-        softkey_label = label_bytes.decode("ascii", errors="ignore").rstrip('\x00')
-        softkey_event = struct.unpack("<I", event_bytes)[0]
+        # offset = 12 + x * 20
+        # if offset + 20 > len(payload):
+        #     logger.warning(f"({client.state.device_name}) [WARN] Softkey {x} exceeds payload length")
+        #     break
+        #
+        # label_bytes = payload[offset:offset+16]
+        # event_bytes = payload[offset+16:offset+20]
+        #
+        # softkey_label = label_bytes.decode("ascii", errors="ignore").rstrip('\x00')
+        # softkey_event = struct.unpack("<I", event_bytes)[0]
         softkeys.append((softkey_label, softkey_event, softkey_event))
 
         client.state.softkey_template[str(x+1)] = {"label": softkey_label, "event": softkey_event}
@@ -277,14 +285,11 @@ def parse_select_softkeys(client, payload):
 
 @register_handler(0x0112, "DisplayPromptStatus")
 def parse_display_prompt_status(client, payload):
-    if len(payload) < 44:
-        logger.warning(f"({client.state.device_name}) [WARN] DisplayPromptStatus too short: {len(payload)} bytes")
-        return
-
-    timeout = struct.unpack("<I", payload[0:4])[0]
-    prompt_status = payload[4:36].decode("ascii", errors="ignore").strip("\x00")
-    line_instance = struct.unpack("<I", payload[36:40])[0]
-    call_reference = struct.unpack("<I", payload[40:44])[0]
+    buf = Buf(payload)
+    timeout = buf.read_u32()
+    prompt_status = buf.read_cstring(32)
+    line_instance = buf.read_u32()
+    call_reference = buf.read_u32()
 
     client.state.update_prompt(prompt_status, timeout, line_instance, call_reference)
 
@@ -334,20 +339,12 @@ def parse_config_stat(client, payload):
 
 @register_handler(0x0092, "LineStatRes")
 def parse_line_stat(client, payload):
-    line_number = struct.unpack("<I", payload[:4])[0]                                    # 4 bytes
-    line_dir_number_bytes = payload[4:28]                                                       # 24 bytes
-    line_fqdn_bytes = payload[28:68]                                                            # 40 bytes
-    line_text_label_bytes = payload[68:108]                                                     # 40 bytes
-    line_display_options = struct.unpack("<I", payload[108:])[0]                         # 4 bytes
-
-    line_dir_number = line_dir_number_bytes.decode("ascii", errors="ignore").rstrip('\x00')
-    line_fqdn = line_fqdn_bytes.decode("ascii", errors="ignore").rstrip('\x00')
-    line_text_label = line_text_label_bytes.decode("ascii", errors="ignore").rstrip('\x00')
-
-    # message_info = get_current_message_info(message_table)
-    # # trace = shared_state.get("trace", print)
-    # trace(0, message_info, shared_state, line_instance=line_number, log=log)
-    # cleanup_stale_calls(shared_state, line_instance=line_number, log=log)
+    buf = Buf(payload)
+    line_number = buf.read_u32()
+    line_dir_number = buf.read_cstring(24)
+    line_fqdn = buf.read_cstring(40)
+    line_text_label = buf.read_cstring(40, "")                      # Missing in CallManager 3.1
+    line_display_options = buf.read_u32(0)                                    # Missing in CallManager 3.1
 
     client.state.lines[str(line_number)] = {"line_dir_number": line_dir_number, "line_fully_qualified_display_name": line_fqdn, "line_text_label": line_text_label, "line_display_options": line_display_options, "line_display_options_str": f"{line_display_options:4b}"}
 
