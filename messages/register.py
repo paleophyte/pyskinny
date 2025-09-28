@@ -2,7 +2,7 @@ import struct
 from utils.client import get_local_ip, ip_to_int, clean_bytes
 from messages.generic import UNREGISTER_STATUS_NAMES
 from dispatcher import register_handler
-from messages.generic import send_skinny_message
+from messages.generic import send_skinny_message, Buf
 import time
 import logging
 logger = logging.getLogger(__name__)
@@ -71,18 +71,15 @@ def send_register_req(state):
 
 @register_handler(0x0081, "RegisterAck")
 def parse_register_ack(client, payload):
-    if len(payload) < 20:
-        logger.warning(f"({client.state.device_name}) RegisterAck payload too short")
-        return
-
-    keepalive = struct.unpack("<I", payload[0:4])[0]
-    # start_keepalive_timer(client, shared_state, interval=keepalive, log=log, on_disconnect=on_disconnect)
-    date_template = payload[4:10].decode("ascii", errors="ignore")
-    padding = struct.unpack("<H", payload[10:12])[0]
-    second_keepalive = struct.unpack("<I", payload[12:16])[0]
-    max_protocol = payload[16]
-    unknown = payload[17]
-    feature_flags = struct.unpack("<H", payload[18:20])[0]
+    buf = Buf(payload)
+    keepalive = buf.read_u32()
+    date_template = buf.read_ascii(6)
+    padding = buf.read_u16()
+    second_keepalive = buf.read_u32()
+    max_protocol = buf.read_u8(0)                                               # Missing in CallManager 3.1
+    unknown = buf.read_u8(0)                                                    # Missing in CallManager 3.1
+    feature_flags = buf.read_u16(0)                                             # Missing in CallManager 3.1
+    logger.debug(f"feature_flags={feature_flags}")
 
     client.state.keepalive_interval = keepalive
     client.state.second_keepalive_interval = second_keepalive
@@ -90,7 +87,6 @@ def parse_register_ack(client, payload):
     client.state.feature_flags = feature_flags
     client.state.feature_flag_str = f"{feature_flags:016b}"
 
-    # logger.info(f"[REGISTER_ACK] KeepAlive: {keepalive}s, SecondKA: {second_keepalive}s, DateFmt: {date_template}, Features: {feature_flags:016b}")
     logger.info(f"({client.state.device_name}) [RECV] RegisterAck")
 
 
