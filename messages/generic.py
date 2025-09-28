@@ -2,6 +2,8 @@ import struct
 from dispatcher import get_message_name
 import os
 import string
+from typing import Optional
+from utils.client import hexdump
 import logging
 logger = logging.getLogger(__name__)
 
@@ -336,3 +338,76 @@ def handle_keypad_press(client, line_number, keypad_btn, call_reference=0):
 
     logger.info(f"[SEND] KeypadButton lineNumber={line_number} callReference={call_reference} keyPadBtn={keypad_btn}")
     send_skinny_message(client, 0x0003, struct.pack("<III", int(keypad_btn), line_number, call_reference), silent=True)
+
+
+class Buf:
+    __slots__ = ("b", "off")
+    def __init__(self, b: bytes):
+        self.b = memoryview(b)
+        self.off = 0
+
+    def remaining(self) -> int:
+        return len(self.b) - self.off
+
+    def read_u32(self, default=None) -> int:
+        if self.remaining() < 4:
+            if default is not None:
+                return int(default)
+            else:
+                raise ValueError("buffer underflow reading u32")
+        val = struct.unpack_from("<I", self.b, self.off)[0]
+        self.off += 4
+        return val
+
+    def read_u16(self, default=None) -> int:
+        if self.remaining() < 2:
+            if default is not None:
+                return int(default)
+            else:
+                raise ValueError("buffer underflow reading u16")
+        val = struct.unpack_from("<H", self.b, self.off)[0]
+        self.off += 2
+        return val
+
+    def read_u8(self, default=None) -> int:
+        if self.remaining() < 1:
+            if default is not None:
+                return int(default)
+            else:
+                raise ValueError("buffer underflow reading u8")
+        val = struct.unpack_from("<B", self.b, self.off)[0]
+        self.off += 1
+        return val
+
+    def read_bytes(self, n: int, default=None) -> bytes:
+        if self.remaining() < n:
+            if default is not None:
+                logger.debug(f"buffer underflow reading {n} bytes")
+                return default
+            else:
+                raise ValueError(f"buffer underflow reading {n} bytes")
+        val = self.b[self.off:self.off+n].tobytes()
+        self.off += n
+        return val
+
+    def read_ascii(self, n: int, default=None) -> str:
+        if self.remaining() < n:
+            if default is not None:
+                return default
+            else:
+                raise ValueError(f"buffer underflow reading {n} ascii chars")
+        return self.read_bytes(n).decode("ascii", errors="ignore")
+
+    def read_cstring(self, n: int, default=None, encoding: str = "ascii") -> str:
+        """Read exactly n bytes, return substring up to first NUL (if any)."""
+        if self.remaining() < n:
+            if default is not None:
+                return default
+            else:
+                raise ValueError(f"buffer underflow reading cstr({n})")
+        raw = self.b[self.off:self.off + n].tobytes()
+        self.off += n
+        cut = raw.find(0)
+        if cut != -1:
+            raw = raw[:cut]
+        return raw.decode(encoding, errors="ignore")
