@@ -26,6 +26,7 @@ class SCCPClient:
         self.state = state
         self.sock = None
         self.running = False
+        self.get_tftp_config = True
         self.logger = logging.getLogger("SCCPClient")
         self.state._prompt_watchers.append(self._on_prompt_changed)
         self._stop_event = threading.Event()
@@ -73,7 +74,8 @@ class SCCPClient:
             t.start()
 
     def start(self):
-        cfg = get_device_config_via_tftp(tftp_server=self.state.server, device_name=self.state.device_name)
+        if self.get_tftp_config:
+            cfg = get_device_config_via_tftp(tftp_server=self.state.server, device_name=self.state.device_name)
 
         self.connect()
         self._send_register()
