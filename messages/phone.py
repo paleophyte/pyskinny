@@ -2,7 +2,7 @@ import struct
 import datetime
 import time
 from dispatcher import register_handler
-from messages.generic import STIMULUS_NAMES, CALL_STATE_NAMES, TONE_NAMES, TONE_OUTPUT_DIRECTION_NAMES, CALL_TYPE_NAMES, CALL_STAT_STATE_NAMES, clean_bytes, send_skinny_message
+from messages.generic import STIMULUS_NAMES, CALL_STATE_NAMES, TONE_NAMES, TONE_OUTPUT_DIRECTION_NAMES, CALL_TYPE_NAMES, CALL_STAT_STATE_NAMES, clean_bytes, send_skinny_message, Buf
 from utils.client import get_local_ip, ip_to_int, _keypad_code_to_char
 from audio_worker import RTPReceiver, RTPSender, socket
 import logging
@@ -11,7 +11,13 @@ logger = logging.getLogger(__name__)
 
 @register_handler(0x0085, "SetRinger")
 def parse_set_ringer(client, payload):
-    ring_mode, ring_duration, line_instance, call_reference = struct.unpack("<IIII", payload)
+    buf = Buf(payload)
+    ring_mode = buf.read_u32()
+    ring_duration = buf.read_u32(0)                       # Missing in CallManager 3.1
+    line_instance = buf.read_u32(0)                       # Missing in CallManager 3.1
+    call_reference = buf.read_u32(0)                      # Missing in CallManager 3.1
+
+    # ring_mode, ring_duration, line_instance, call_reference = struct.unpack("<IIII", payload)
 
     client.state.ring_mode = ring_mode
     client.state.ring_duration = ring_duration
@@ -52,7 +58,15 @@ def parse_set_lamp(client, payload):
 
 @register_handler(0x0111, "CallState")
 def parse_call_state(client, payload):
-    call_state, line_instance, call_reference, privacy, precedence_level, precedence_domain = struct.unpack("<IIIIII", payload)
+    buf = Buf(payload)
+    call_state = buf.read_u32()
+    line_instance = buf.read_u32()
+    call_reference = buf.read_u32()
+    privacy = buf.read_u32(0)                                # Missing in CallManager 3.1
+    precedence_level = buf.read_u32(0)                       # Missing in CallManager 3.1
+    precedence_domain = buf.read_u32(0)                      # Missing in CallManager 3.1
+
+    # call_state, line_instance, call_reference, privacy, precedence_level, precedence_domain = struct.unpack("<IIIIII", payload)
     call_state_name = CALL_STATE_NAMES.get(call_state, "UNKNOWN")
 
     current_time = datetime.datetime.now(datetime.timezone.utc)
@@ -136,7 +150,13 @@ def parse_activate_callplane(client, payload):
 
 @register_handler(0x0082, "StartTone")
 def parse_start_tone(client, payload):
-    tone, tone_output_direction, line_instance, call_reference = struct.unpack("<IIII", payload)
+    buf = Buf(payload)
+    tone = buf.read_u32()
+    tone_output_direction = buf.read_u32(0)                      # Missing in CallManager 3.1
+    line_instance = buf.read_u32(0)                              # Missing in CallManager 3.1
+    call_reference = buf.read_u32(0)                             # Missing in CallManager 3.1
+
+    # tone, tone_output_direction, line_instance, call_reference = struct.unpack("<IIII", payload)
     tone_name = TONE_NAMES.get(tone, "UNKNOWN")
     tone_output_direction_name = TONE_OUTPUT_DIRECTION_NAMES.get(tone_output_direction, "UNKNOWN")
 
@@ -154,7 +174,11 @@ def parse_start_tone(client, payload):
 
 @register_handler(0x0083, "StopTone")
 def parse_stop_tone(client, payload):
-    line_instance, call_reference = struct.unpack("<II", payload)
+    buf = Buf(payload)
+    line_instance = buf.read_u32(0)                       # Missing in CallManager 3.1
+    call_reference = buf.read_u32(0)                      # Missing in CallManager 3.1
+
+    # line_instance, call_reference = struct.unpack("<II", payload)
 
     client.state.play_tones = {}
     client.audio.clear_tone(line_instance)
