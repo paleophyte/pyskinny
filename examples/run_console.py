@@ -34,6 +34,7 @@ def main():
     parser.add_argument("--model", help="Phone model (e.g., Cisco 7970)")
     parser.add_argument("--line", type=int, default=1, help="Line instance to use for keypad/softkeys")
     parser.add_argument("--config", action="store_true", help="Load connection details from config file. Default=examples/cli.config")
+    parser.add_argument("--skip_tftp", action="store_true", help="Skip TFTP File Download")
     parser.add_argument("-v", "--verbose", action="count", default=0,
                         help="Increase output verbosity (-v = warning, -vv = message, -vvv = info, -vvvv = debug)")
     args = parser.parse_args()
@@ -48,6 +49,10 @@ def main():
         # Keep any non-StreamHandler (e.g., FileHandler) and the curses handler
         if type(h).__name__ == "StreamHandler":
             root.removeHandler(h)
+
+    # if args.skip_tftp:
+    #     logging.debug("Skip TFTP File Download")
+    app.get_tftp_config = False
 
     curses.wrapper(app.run, args)
 
