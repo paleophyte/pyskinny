@@ -373,7 +373,7 @@ class CLIPhone:
         self.config_path = config_path_from_here()
         self.config = load_config(self.config_path) or {}
         # ensure keys exist
-        for k in ("server","mac","model","auto_connect"):
+        for k in ("server","mac","device","model","auto_connect"):
             self.config.setdefault(k, "" if k!="auto_connect" else True)
 
         self.client = None
@@ -398,15 +398,16 @@ class CLIPhone:
             self.logger.info("Already connected.")
             return True
         if not is_config_complete(self.config):
-            self.logger.error("Configuration incomplete. Set 'server', 'mac', and 'model' first.")
+            self.logger.error("Configuration incomplete. Set 'server', 'mac', 'device', and 'model' first.")
             return False
 
         server = self.config["server"]
         mac    = self.config["mac"]
+        device = self.config["device"]
         model  = self.config["model"]
 
         # Build state/client on demand
-        self.state = PhoneState(server=server, mac=mac, model=model)
+        self.state = PhoneState(server=server, mac=mac, device_name=device, model=model)
         self.client = SCCPClient(state=self.state)
 
         iface, src_ip, mac = find_interface_for_target_ip(self.state.server)
