@@ -49,4 +49,4 @@ def save_config(path: str, cfg: dict) -> None:
 
 
 def is_config_complete(cfg: dict) -> bool:
-    return bool(cfg.get("server") and cfg.get("mac") and cfg.get("model"))
+    return bool(cfg.get("server") and cfg.get("model")) and (cfg.get("mac") or cfg.get("device"))
