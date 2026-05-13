@@ -2,8 +2,10 @@ import struct
 from dispatcher import get_message_name
 import os
 import string
+import datetime
 from typing import Optional
 from utils.client import hexdump
+from utils.call_management import mark_call_ended
 import logging
 logger = logging.getLogger(__name__)
 
@@ -197,22 +199,22 @@ BUTTON_TYPES = {
     "255": "Undefined",
 }
 
-CALL_STATE_NAMES = {
-    0:  "Idle",          # No active call
-    1:  "OffHook",       # Handset lifted / call initiated
-    2:  "OnHook",        # Call ended / handset down
-    3:  "RingOut",       # Outgoing call is ringing
-    4:  "RingIn",        # Incoming call is ringing
-    5:  "Connected",     # Call is active
-    6:  "Busy",          # Remote party is busy
-    7:  "Congestion",    # Network congestion
-    8:  "Hold",          # Call is on hold
-    9:  "CallWaiting",   # Incoming call while another is active
-    10: "CallTransfer",  # Mid transfer
-    11: "CallPark",      # Mid park
-    12: "Proceed",       # Dialing in progress
-    13: "CallRxOffer",   # Offer received (SIP interop, etc.)
-}
+# CALL_STATE_NAMES = {
+#     0:  "Idle",          # No active call
+#     1:  "OffHook",       # Handset lifted / call initiated
+#     2:  "OnHook",        # Call ended / handset down
+#     3:  "RingOut",       # Outgoing call is ringing
+#     4:  "RingIn",        # Incoming call is ringing
+#     5:  "Connected",     # Call is active
+#     6:  "Busy",          # Remote party is busy
+#     7:  "Congestion",    # Network congestion
+#     8:  "Hold",          # Call is on hold
+#     9:  "CallWaiting",   # Incoming call while another is active
+#     10: "CallTransfer",  # Mid transfer
+#     11: "CallPark",      # Mid park
+#     12: "Proceed",       # Dialing in progress
+#     13: "CallRxOffer",   # Offer received (SIP interop, etc.)
+# }
 
 CALL_STAT_STATE_NAMES = {
     1: "RingOut",
@@ -348,8 +350,36 @@ def handle_keypad_press(client, line_number, keypad_btn, call_reference=0):
     # call_reference = int(shared_state.get("CallInfo", {}).get(str(line_number), {}).get("callReference", "0"))
     # call_reference = get_active_call_reference(1, shared_state, log=log)
 
+    client.play_beep()
+
     logger.info(f"[SEND] KeypadButton lineNumber={line_number} callReference={call_reference} keyPadBtn={keypad_btn}")
     send_skinny_message(client, 0x0003, struct.pack("<III", int(keypad_btn), line_number, call_reference), silent=True)
+
+
+def handle_button_press(client, stimulus_type, line_instance):
+    logger.info(f"[SEND] Stimulus stimulusType={stimulus_type} lineInstance={line_instance}")
+    # Send "Stimulus" message
+    send_skinny_message(client, 0x0005, struct.pack("<II", stimulus_type, line_instance), silent=True)
+    if stimulus_type == 9:
+        # Send "OffHook" message
+        send_offhook(client)
+
+
+def send_offhook(client):
+    logger.info(f"[SEND] OffHook")
+    # Send "OffHook" message
+    send_skinny_message(client, 0x0006, silent=True)
+
+
+def send_onhook(client):
+    logger.info(f"[SEND] OnHook")
+    # Send "OnHook" message
+    send_skinny_message(client, 0x0007, silent=True)
+    mark_call_ended(
+        client,
+        call_reference=None,
+        source="StopMediaTransmission",
+    )
 
 
 class Buf:
