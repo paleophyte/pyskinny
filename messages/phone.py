@@ -2,7 +2,9 @@ import struct
 import datetime
 import time
 from dispatcher import register_handler
-from messages.generic import STIMULUS_NAMES, CALL_STATE_NAMES, TONE_NAMES, TONE_OUTPUT_DIRECTION_NAMES, CALL_TYPE_NAMES, CALL_STAT_STATE_NAMES, clean_bytes, send_skinny_message, Buf
+from messages.generic import STIMULUS_NAMES, TONE_NAMES, TONE_OUTPUT_DIRECTION_NAMES, CALL_TYPE_NAMES, CALL_STAT_STATE_NAMES, clean_bytes, send_skinny_message, Buf
+from utils.call_management import CALL_STATE_NAMES
+from utils.call_management import update_call_state, mark_call_ended, mark_call_connected, next_synthetic_call_reference
 from utils.client import get_local_ip, ip_to_int, _keypad_code_to_char
 from audio_worker import RTPReceiver, RTPSender, socket
 import logging
@@ -56,85 +58,138 @@ def parse_set_lamp(client, payload):
     logger.info(f"[RECV] SetLamp")
 
 
+# @register_handler(0x0111, "CallState")
+# def parse_call_state(client, payload):
+#     buf = Buf(payload)
+#     call_state = buf.read_u32()
+#     line_instance = buf.read_u32()
+#     call_reference = buf.read_u32()
+#     privacy = buf.read_u32(0)                                # Missing in CallManager 3.1
+#     precedence_level = buf.read_u32(0)                       # Missing in CallManager 3.1
+#     precedence_domain = buf.read_u32(0)                      # Missing in CallManager 3.1
+#
+#     # call_state, line_instance, call_reference, privacy, precedence_level, precedence_domain = struct.unpack("<IIIIII", payload)
+#     call_state_name = CALL_STATE_NAMES.get(call_state, "UNKNOWN")
+#
+#     current_time = datetime.datetime.now(datetime.timezone.utc)
+#     if str(call_reference) in client.state.calls:
+#         call_started = client.state.calls[str(call_reference)]["call_started"]
+#         call_ended = client.state.calls[str(call_reference)]["call_ended"]
+#     else:
+#         call_started = None
+#         call_ended = None
+#
+#     client.state.calls[str(call_reference)] = {"call_state": call_state, "call_state_name": call_state_name, "line_instance": line_instance, "call_reference": call_reference, "privacy": privacy, "precedence_level": precedence_level, "precedence_domain": precedence_domain, "current_time": current_time, "call_started": call_started, "call_ended": call_ended}
+#     if str(call_reference) not in client.state.calls_list:
+#         client.state.calls_list.append(str(call_reference))
+#
+#     if call_state in [0, 2]:                        # Idle, OnHook
+#         if str(call_reference) in client.state.active_calls_list:
+#             client.state.active_calls_list.remove(str(call_reference))
+#
+#         client.state.calls[str(call_reference)]["call_ended"] = current_time
+#         client.state.active_call = False
+#         client.state.call_active = False
+#         client.state.call_connected = False
+#         client.state.media_active = False
+#         client.events.call_ringing.clear()
+#         client.events.call_connected.clear()
+#         client.events.media_started.clear()
+#         if call_state == 2:
+#             client.events.call_ended.set()
+#         else:
+#             client.events.call_ended.clear()
+#     elif call_state in [3, 4]:                      # RingOut, RingIn
+#         if str(call_reference) not in client.state.active_calls_list:
+#             client.state.active_calls_list.append(str(call_reference))
+#
+#         client.state.call_active = True
+#         client._call_epoch += 1
+#         client.state.last_call_epoch = client._call_epoch
+#         client.events.call_ringing.set()
+#         client.events.call_ended.clear()
+#     elif call_state in [5,]:                        # Connected
+#         if str(call_reference) not in client.state.active_calls_list:
+#             client.state.active_calls_list.append(str(call_reference))
+#
+#         if client.state.calls[str(call_reference)].get("call_started") is None:
+#             client.state.calls[str(call_reference)]["call_started"] = current_time
+#         client.state.call_active = True
+#         client.state.call_connected = True
+#         client.events.call_connected.set()
+#         client.events.call_ended.clear()
+#
+#     # Call Trace Logging
+#     # message_info = get_current_message_info(message_table)
+#     # # trace = shared_state.get("trace", print)
+#     # trace(call_reference, message_info, shared_state, line_instance=line_instance, log=log)
+#
+#     # Track call lifecycle: TODO: working on this next
+#     # previous_state = handle_call_state(line_instance, call_reference, call_state_name, shared_state)
+#     # lifecycle = shared_state["calls"][line_instance][call_reference]["lifecycle"]
+#     # if call_state_name == "OnHook":
+#     #     if "RingIn" in lifecycle and "Connected" not in lifecycle:
+#     #         log_call_event("missed", {}, shared_state, log)
+#     #     elif "RingIn" in lifecycle and "Connected" in lifecycle:
+#     #         log_call_event("received", {}, shared_state, log)
+#     #     elif "RingOut" in lifecycle:
+#     #         log_call_event("placed", {}, shared_state, log)
+#
+#     # logger.info(f"[RECV] CallState callState: {call_state_name} ({call_state}), lineInstance: {line_instance}, callReference: {call_reference}, privacy: {privacy}, precedenceLevel: {precedence_level}, precedenceDomain: {precedence_domain}")
+#     logger.info(f"[RECV] CallState")
+
+
 @register_handler(0x0111, "CallState")
 def parse_call_state(client, payload):
     buf = Buf(payload)
+
     call_state = buf.read_u32()
     line_instance = buf.read_u32()
     call_reference = buf.read_u32()
-    privacy = buf.read_u32(0)                                # Missing in CallManager 3.1
-    precedence_level = buf.read_u32(0)                       # Missing in CallManager 3.1
-    precedence_domain = buf.read_u32(0)                      # Missing in CallManager 3.1
+    privacy = buf.read_u32(0) if buf.remaining() >= 4 else 0
+    precedence_level = buf.read_u32(0) if buf.remaining() >= 4 else 0
+    precedence_domain = buf.read_u32(0) if buf.remaining() >= 4 else 0
 
-    # call_state, line_instance, call_reference, privacy, precedence_level, precedence_domain = struct.unpack("<IIIIII", payload)
-    call_state_name = CALL_STATE_NAMES.get(call_state, "UNKNOWN")
+    key = update_call_state(
+        client,
+        call_reference=call_reference,
+        line_instance=line_instance,
+        call_state=call_state,
+        source="CallState",
+    )
 
-    current_time = datetime.datetime.now(datetime.timezone.utc)
-    if str(call_reference) in client.state.calls:
-        call_started = client.state.calls[str(call_reference)]["call_started"]
-        call_ended = client.state.calls[str(call_reference)]["call_ended"]
-    else:
-        call_started = None
-        call_ended = None
+    call = client.state.calls[key]
+    call["privacy"] = privacy
+    call["precedence_level"] = precedence_level
+    call["precedence_domain"] = precedence_domain
 
-    client.state.calls[str(call_reference)] = {"call_state": call_state, "call_state_name": call_state_name, "line_instance": line_instance, "call_reference": call_reference, "privacy": privacy, "precedence_level": precedence_level, "precedence_domain": precedence_domain, "current_time": current_time, "call_started": call_started, "call_ended": call_ended}
-    if str(call_reference) not in client.state.calls_list:
-        client.state.calls_list.append(str(call_reference))
+    if call_state in [0, 2]:          # Idle / OnHook
+        mark_call_ended(client, call_reference, source="CallState")
 
-    if call_state in [0, 2]:                        # Idle, OnHook
-        if str(call_reference) in client.state.active_calls_list:
-            client.state.active_calls_list.remove(str(call_reference))
-
-        client.state.calls[str(call_reference)]["call_ended"] = current_time
-        client.state.active_call = False
-        client.state.call_active = False
-        client.state.call_connected = False
-        client.state.media_active = False
-        client.events.call_ringing.clear()
-        client.events.call_connected.clear()
-        client.events.media_started.clear()
-        if call_state == 2:
-            client.events.call_ended.set()
-        else:
-            client.events.call_ended.clear()
-    elif call_state in [3, 4]:                      # RingOut, RingIn
-        if str(call_reference) not in client.state.active_calls_list:
-            client.state.active_calls_list.append(str(call_reference))
+    elif call_state in [3, 4]:        # RingOut / RingIn
+        if key not in client.state.active_calls_list:
+            client.state.active_calls_list.append(key)
 
         client.state.call_active = True
+        client.state.active_call = True
         client._call_epoch += 1
         client.state.last_call_epoch = client._call_epoch
         client.events.call_ringing.set()
         client.events.call_ended.clear()
-    elif call_state in [5,]:                        # Connected
-        if str(call_reference) not in client.state.active_calls_list:
-            client.state.active_calls_list.append(str(call_reference))
 
-        if client.state.calls[str(call_reference)].get("call_started") is None:
-            client.state.calls[str(call_reference)]["call_started"] = current_time
-        client.state.call_active = True
-        client.state.call_connected = True
-        client.events.call_connected.set()
-        client.events.call_ended.clear()
+    elif call_state == 5:             # Connected
+        mark_call_connected(
+            client,
+            call_reference=call_reference,
+            line_instance=line_instance,
+            source="CallState",
+        )
 
-    # Call Trace Logging
-    # message_info = get_current_message_info(message_table)
-    # # trace = shared_state.get("trace", print)
-    # trace(call_reference, message_info, shared_state, line_instance=line_instance, log=log)
-
-    # Track call lifecycle: TODO: working on this next
-    # previous_state = handle_call_state(line_instance, call_reference, call_state_name, shared_state)
-    # lifecycle = shared_state["calls"][line_instance][call_reference]["lifecycle"]
-    # if call_state_name == "OnHook":
-    #     if "RingIn" in lifecycle and "Connected" not in lifecycle:
-    #         log_call_event("missed", {}, shared_state, log)
-    #     elif "RingIn" in lifecycle and "Connected" in lifecycle:
-    #         log_call_event("received", {}, shared_state, log)
-    #     elif "RingOut" in lifecycle:
-    #         log_call_event("placed", {}, shared_state, log)
-
-    # logger.info(f"[RECV] CallState callState: {call_state_name} ({call_state}), lineInstance: {line_instance}, callReference: {call_reference}, privacy: {privacy}, precedenceLevel: {precedence_level}, precedenceDomain: {precedence_domain}")
-    logger.info(f"[RECV] CallState")
+    logger.info(
+        f"[RECV] CallState "
+        f"state={CALL_STATE_NAMES.get(call_state, 'UNKNOWN')} "
+        f"line={line_instance} ref={call_reference}"
+    )
 
 
 @register_handler(0x0116, "ActivateCallPlane")
@@ -194,28 +249,135 @@ def parse_stop_tone(client, payload):
 
 @register_handler(0x008F, "CallInfo")
 def parse_call_info(client, payload):
-    calling_party_name = clean_bytes(payload[:40])                                                                       # 40 bytes
-    calling_party = clean_bytes(payload[40:64])                                                                          # 24 bytes
-    called_party_name = clean_bytes(payload[64:104])                                                                     # 40 bytes
-    called_party = clean_bytes(payload[104:128])                                                                         # 24 bytes
-    line_instance, call_reference, call_type = struct.unpack("<III", payload[128:140])                            # 4 + 4 + 4
-    original_called_party_name = clean_bytes(payload[140:180])                                                           # 40 bytes
-    original_called_party = clean_bytes(payload[180:204])                                                                # 24 bytes
-    last_redirecting_party_name = clean_bytes(payload[204:244])                                                          # 40 bytes
-    last_redirecting_party = clean_bytes(payload[244:268])                                                               # 24 bytes
-    original_cpdn_redirect_reason, last_redirecting_reason = struct.unpack("<II", payload[268:276])               # 4 + 4
-    cgpn_voicemail_box = clean_bytes(payload[276:300])                                                                   # 24 bytes
-    cdpn_voicemail_box = clean_bytes(payload[300:324])                                                                   # 24 bytes
-    original_cdpn_voicemail_box = clean_bytes(payload[324:348])                                                          # 24 bytes
-    last_redirecting_voicemail_box = clean_bytes(payload[348:372])                                                       # 24 bytes
-    call_instance, call_security_status, party_pi_restriction_bits = struct.unpack("<III", payload[372:])         # 4 + 4 + 4
+    buf = Buf(payload)
+
+    calling_party_name = buf.read_cstring(40, "")
+    calling_party = buf.read_cstring(24, "")
+    called_party_name = buf.read_cstring(40, "")
+    called_party = buf.read_cstring(24, "")
+
+    line_instance = 0
+    call_reference = 0
+    call_type = 0
+
+    original_called_party_name = ""
+    original_called_party = ""
+    last_redirecting_party_name = ""
+    last_redirecting_party = ""
+    original_cpdn_redirect_reason = 0
+    last_redirecting_reason = 0
+    cgpn_voicemail_box = ""
+    cdpn_voicemail_box = ""
+    original_cdpn_voicemail_box = ""
+    last_redirecting_voicemail_box = ""
+    call_instance = 0
+    call_security_status = 0
+    party_pi_restriction_bits = 0
+
+    # CM 3.x/4.x+ extended CallInfo fields.
+    if buf.remaining() >= 12:
+        line_instance = buf.read_u32()
+        call_reference = buf.read_u32()
+        call_type = buf.read_u32()
+
+    if buf.remaining() >= 40:
+        original_called_party_name = buf.read_cstring(40, "")
+
+    if buf.remaining() >= 24:
+        original_called_party = buf.read_cstring(24, "")
+
+    if buf.remaining() >= 40:
+        last_redirecting_party_name = buf.read_cstring(40, "")
+
+    if buf.remaining() >= 24:
+        last_redirecting_party = buf.read_cstring(24, "")
+
+    if buf.remaining() >= 8:
+        original_cpdn_redirect_reason = buf.read_u32()
+        last_redirecting_reason = buf.read_u32()
+
+    if buf.remaining() >= 24:
+        cgpn_voicemail_box = buf.read_cstring(24, "")
+
+    if buf.remaining() >= 24:
+        cdpn_voicemail_box = buf.read_cstring(24, "")
+
+    if buf.remaining() >= 24:
+        original_cdpn_voicemail_box = buf.read_cstring(24, "")
+
+    if buf.remaining() >= 24:
+        last_redirecting_voicemail_box = buf.read_cstring(24, "")
+
+    if buf.remaining() >= 12:
+        call_instance = buf.read_u32()
+        call_security_status = buf.read_u32()
+        party_pi_restriction_bits = buf.read_u32()
 
     call_type_name = CALL_TYPE_NAMES.get(call_type, "UNKNOWN")
+    binary_flags = format(party_pi_restriction_bits, "032b")
 
-    binary_flags = format(party_pi_restriction_bits, 'b').zfill(32)
-    client.state.callinfo[str(call_reference)] = {"calling_party_name": calling_party_name, "calling_party": calling_party, "called_party_name": called_party_name, "called_party": called_party, "line_instance": line_instance, "call_reference": call_reference, "call_type": call_type, "call_type_name": call_type_name, "original_called_party_name": original_called_party_name, "original_called_party": original_called_party, "last_redirecting_party_name": last_redirecting_party_name, "last_redirecting_party": last_redirecting_party, "original_cpdn_redirect_reason": original_cpdn_redirect_reason, "last_redirecting_reason": last_redirecting_reason, "cgpn_voice_mail_box": cgpn_voicemail_box, "cdpn_voice_mail_box": cdpn_voicemail_box, "original_cdpn_voice_mail_box": original_cdpn_voicemail_box, "last_redirecting_voice_mail_box": last_redirecting_voicemail_box, "call_instance": call_instance, "call_security_status": call_security_status, "party_pi_restriction_bits": binary_flags}
-    if str(call_reference) not in client.state.calls_list:
-        client.state.calls_list.append(str(call_reference))
+    # CM2 CallInfo has no call_reference field, so use selected/active ref if available.
+    if not call_reference:
+        active_refs = list(client.state.active_calls_list or [])
+
+        if active_refs:
+            call_reference = active_refs[0]
+        else:
+            call_reference = next_synthetic_call_reference(client)
+
+    key = str(call_reference)
+
+    client.state.callinfo[key] = {
+        "calling_party_name": calling_party_name,
+        "calling_party": calling_party,
+        "called_party_name": called_party_name,
+        "called_party": called_party,
+        "line_instance": line_instance,
+        "call_reference": call_reference,
+        "call_type": call_type,
+        "call_type_name": call_type_name,
+        "original_called_party_name": original_called_party_name,
+        "original_called_party": original_called_party,
+        "last_redirecting_party_name": last_redirecting_party_name,
+        "last_redirecting_party": last_redirecting_party,
+        "original_cpdn_redirect_reason": original_cpdn_redirect_reason,
+        "last_redirecting_reason": last_redirecting_reason,
+        "cgpn_voice_mail_box": cgpn_voicemail_box,
+        "cdpn_voice_mail_box": cdpn_voicemail_box,
+        "original_cdpn_voice_mail_box": original_cdpn_voicemail_box,
+        "last_redirecting_voice_mail_box": last_redirecting_voicemail_box,
+        "call_instance": call_instance,
+        "call_security_status": call_security_status,
+        "party_pi_restriction_bits": binary_flags,
+    }
+
+    if key not in client.state.calls_list:
+        client.state.calls_list.append(key)
+
+    remote_name = calling_party_name or called_party_name
+    remote_number = calling_party or called_party
+
+    key = update_call_state(
+        client,
+        call_reference=call_reference,
+        line_instance=line_instance or 1,
+        call_state=3,
+        call_state_name="CallInfo",
+        source="CallInfo",
+        calling_party_name=calling_party_name,
+        calling_party=calling_party,
+        called_party_name=called_party_name,
+        called_party=called_party,
+        remote_name=remote_name,
+        remote_number=remote_number,
+    )
+
+    if key not in client.state.active_calls_list:
+        client.state.active_calls_list.append(key)
+
+    client.state.active_call = True
+    client.state.call_active = True
+    client.events.call_ended.clear()
 
     # # Track call lifecycle
     # call_state_name = "RingIn"
@@ -226,7 +388,13 @@ def parse_call_info(client, payload):
     # trace(call_reference, message_info, shared_state, line_instance=line_instance, log=log)
 
     # logger.info(f"[RECV] CallInfo callingPartyName: {calling_party_name}, callingParty: {calling_party}, calledPartyName: {called_party_name}, calledParty: {called_party}, lineInstance: {line_instance}, callReference: {call_reference}, callType: {call_type_name} ({call_type}), originalCalledPartyName: {original_called_party_name}, originalCalledParty: {original_called_party}, lastRedirectingPartyName: {last_redirecting_party_name}, lastRedirectingParty: {last_redirecting_party}, originalCpdnRedirectReason: {original_cpdn_redirect_reason}, lastRedirectingReason: {last_redirecting_reason}, cgpnVoiceMailBox: {cgpn_voicemail_box}, cpdnVoiceMailBox: {cdpn_voicemail_box}, originalCdpnVoiceMailBox: {original_cdpn_voicemail_box}, lastRedirectingVoiceMailBox: {last_redirecting_voicemail_box}, callInstance: {call_instance}, callSecurityStatus: {call_security_status}, partyPIRestrictionBits: {binary_flags}")
-    logger.info(f"[RECV] CallInfo")
+
+    logger.info(
+        f"[RECV] CallInfo "
+        f"from={calling_party_name!r} <{calling_party}> "
+        f"to={called_party_name!r} <{called_party}> "
+        f"ref={call_reference}"
+    )
 
 
 @register_handler(0x011D, "DialedNumber")
@@ -249,13 +417,39 @@ def parse_dialed_number(client, payload):
 
 @register_handler(0x008A, "StartMediaTransmission")
 def parse_start_media_transmission(client, payload):
-    conference_id, pass_through_party_id, remote_ip_addr, remote_port_number, milli_second_packet_size, compression_type, precedence_value, ss_value, max_frames_per_packet, padding, g723_bitrate, call_reference, algorithm_id, key_len, salt_len = struct.unpack("<IIIIIIIIHHIIIHH", payload[:52])
-    key_bytes = payload[52:68]                                                                                           # 16 bytes
-    salt_bytes = payload[68:84]                                                                                          # 16 bytes
+    buf = Buf(payload)
+
+    conference_id = buf.read_u32(0)
+    pass_through_party_id = buf.read_u32(0)
+    remote_ip_addr = buf.read_u32(0)
+    remote_port_number = buf.read_u32(0)
+    milli_second_packet_size = buf.read_u32(20)
+    compression_type = buf.read_u32(0)
+    precedence_value = buf.read_u32(0)
+    ss_value = buf.read_u32(0)
+    max_frames_per_packet = buf.read_u16(0)
+    padding = buf.read_u16(0)
+
+    # Present in later CM versions, missing in CM 2.01.
+    g723_bitrate = buf.read_u32(0) if buf.remaining() >= 4 else 0
+    call_reference = buf.read_u32(0) if buf.remaining() >= 4 else 0
+    algorithm_id = buf.read_u32(0) if buf.remaining() >= 4 else 0
+    key_len = buf.read_u16(0) if buf.remaining() >= 2 else 0
+    salt_len = buf.read_u16(0) if buf.remaining() >= 2 else 0
+
+    key_bytes = buf.read_bytes(16) if buf.remaining() >= 16 else b""
+    salt_bytes = buf.read_bytes(16) if buf.remaining() >= 16 else b""
 
     key = clean_bytes(key_bytes)
     salt = clean_bytes(salt_bytes)
     # logger.info(f"[RECV] StartMediaTransmission conferenceId: {conference_id}, passThroughPartyId: {pass_through_party_id}, remoteIpAddr: {remote_ip_addr}, remotePortNumber: {remote_port_number}, milliSecondPacketSize: {milli_second_packet_size}, compressionType: {compression_type}, precedenceValue: {precedence_value}, ssValue: {ss_value}, maxFramesPerPacket: {max_frames_per_packet}, padding: {padding}, g723Bitrate: {g723_bitrate}, callReference: {call_reference}, algorithmId: {algorithm_id}, keyLen: {key_len}, saltLen: {salt_len}, key: {key}, salt: {salt}")
+
+    if not call_reference:
+        call_reference = (
+            getattr(client.state, "selected_call_reference", None)
+            or getattr(client.state, "active_call_reference", None)
+            or 0
+        )
 
     client.state.media_active = True
     client.events.media_started.set()
@@ -294,33 +488,59 @@ def parse_start_media_transmission(client, payload):
     # client.state["rtp_remote_ip"] = remote_ip
     # client.state["rtp_remote_port"] = remote_port_number
     # sender.start()
+
     remote_ip = socket.inet_ntoa(struct.pack("<I", remote_ip_addr))
     ptime = milli_second_packet_size or 20
-    pt = 0  # usually PCMU in NA; map from compression_type if you have it
-    tx = RTPSender(remote_ip, remote_port_number, ptime_ms=ptime, payload_type=pt, log=client.logger)
+    pt = 0
+
+    tx = RTPSender(
+        remote_ip,
+        remote_port_number,
+        ptime_ms=ptime,
+        payload_type=pt,
+        log=client.logger,
+    )
     tx.start()
+
     play_mode = client.state.kv_dict.get("audio_play_mode", "silent")
+
     if play_mode in ["silent", "silence"]:
-        logger.debug(f"RTP Sending mode: Silence")
-        pass
+        logger.debug("RTP Sending mode: Silence")
     elif play_mode in ["mic", "microphone"]:
-        logger.debug(f"RTP Sending mode: Microphone")
+        logger.debug("RTP Sending mode: Microphone")
         tx.send_microphone()
     else:
         logger.debug(f"RTP Sending mode: File {play_mode}")
         tx.send_wav(play_mode, loop=True)
+
     client.state._rtp_tx = tx
 
-    logger.info(f"[RECV] StartMediaTransmission")
+    mark_call_connected(
+        client,
+        call_reference=call_reference,
+        line_instance=getattr(client.state, "active_call_line_instance", 1) or 1,
+        source="StartMediaTransmission",
+    )
+
+    logger.info(
+        f"[RECV] StartMediaTransmission "
+        f"remote={remote_ip}:{remote_port_number} "
+        f"ptime={ptime} codec={compression_type} "
+        f"call_ref={call_reference}"
+    )
 
 
 @register_handler(0x008B, "StopMediaTransmission")
 def parse_stop_media_transmission(client, payload):
-    conference_id, pass_through_party_id, call_reference = struct.unpack("<III", payload)
+    buf = Buf(payload)
 
-    # Close/clear RTP Sender
+    conference_id = buf.read_u32(0)
+    pass_through_party_id = buf.read_u32(0) if buf.remaining() >= 4 else 0
+    call_reference = buf.read_u32(0) if buf.remaining() >= 4 else 0
+
     tx = client.state._rtp_tx or None
-    if tx: tx.stop()
+    if tx:
+        tx.stop()
 
     client.state.media_active = False
     client.events.media_started.clear()
@@ -345,7 +565,53 @@ def parse_stop_media_transmission(client, payload):
     # trace(call_reference, message_info, shared_state, line_instance=None, log=log, override_message_data=trace_data)
 
     # logger.info(f"[RECV] StopMediaTransmission conferenceId: {conference_id}, passThroughPartyId: {pass_through_party_id}, callReference: {call_reference}")
-    logger.info(f"[RECV] StopMediaTransmission")
+
+    # mark_call_ended(
+    #     client,
+    #     call_reference=call_reference or None,
+    #     source="StopMediaTransmission",
+    # )
+
+    logger.info(
+        f"[RECV] StopMediaTransmission "
+        f"conference_id={conference_id} "
+        f"pass_through_party_id={pass_through_party_id} "
+        f"call_reference={call_reference}"
+    )
+
+
+@register_handler(0x008C, "StartMediaReception")
+def parse_start_media_reception(client, payload):    # Wireshark dissector doesn't name this message; making an assumption here
+    buf = Buf(payload)
+
+    conference_id = buf.read_u32(0)
+    pass_through_party_id = buf.read_u32(0) if buf.remaining() >= 4 else 0
+    call_reference = buf.read_u32(0) if buf.remaining() >= 4 else 0
+
+    logger.info(
+        f"[RECV] StartMediaReception "
+        f"conference_id={conference_id} "
+        f"pass_through_party_id={pass_through_party_id} "
+        f"call_reference={call_reference}"
+    )
+
+
+@register_handler(0x008D, "StopMediaReception")
+def parse_stop_media_reception(client, payload):    # Wireshark dissector doesn't name this message; making an assumption here
+    buf = Buf(payload)
+
+    conference_id = buf.read_u32(0)
+    pass_through_party_id = buf.read_u32(0) if buf.remaining() >= 4 else 0
+    call_reference = buf.read_u32(0) if buf.remaining() >= 4 else 0
+
+    client.state.media_active = False
+
+    logger.info(
+        f"[RECV] StopMediaReception "
+        f"conference_id={conference_id} "
+        f"pass_through_party_id={pass_through_party_id} "
+        f"call_reference={call_reference}"
+    )
 
 
 @register_handler(0x0105, "OpenReceiveChannel")
@@ -568,3 +834,176 @@ def parse_display_notify(client, payload):
     }
 
     logger.info(f"[PROMPT] '{notify}' Timeout: {time_out_value}")
+
+
+@register_handler(0x0099, "DisplayText")
+def parse_display_text(client, payload):
+    display_text = clean_bytes(payload[0:32])
+    time_out_value = 9999
+
+    client.state.update_prompt(display_text, time_out_value)
+    client.state.display_notify = {
+        "timeOutValue": time_out_value,
+        "notify": display_text,
+        "received_at": time.time() if time_out_value > 0 else None,
+    }
+
+    logger.info(f"[RECV] DisplayText='{display_text}'")
+
+
+# def next_synthetic_call_reference(client):
+#     client._call_epoch += 1
+#     client.state.last_call_epoch = client._call_epoch
+#     return f"cm2-{client._call_epoch}"
+#
+#
+# def update_call_state(
+#     client,
+#     *,
+#     call_reference=None,
+#     line_instance=0,
+#     call_state=None,
+#     call_state_name=None,
+#     source="unknown",
+#     calling_party_name="",
+#     calling_party="",
+#     called_party_name="",
+#     called_party="",
+#     remote_name="",
+#     remote_number="",
+# ):
+#     now = datetime.datetime.now(datetime.timezone.utc)
+#
+#     # CM2 may not provide call_reference. Pick a stable fallback.
+#     if not call_reference:
+#         call_reference = (
+#             getattr(client.state, "selected_call_reference", None)
+#             or getattr(client.state, "active_call_reference", None)
+#             or line_instance
+#             or 1
+#         )
+#
+#     key = str(call_reference)
+#
+#     existing = client.state.calls.get(key, {})
+#
+#     call_started = existing.get("call_started")
+#     call_ended = existing.get("call_ended")
+#
+#     if call_state_name is None and call_state is not None:
+#         call_state_name = CALL_STATE_NAMES.get(call_state, "UNKNOWN")
+#
+#     if call_state is None:
+#         call_state = existing.get("call_state", 0)
+#
+#     client.state.calls[key] = {
+#         **existing,
+#         "call_state": call_state,
+#         "call_state_name": call_state_name or existing.get("call_state_name", "UNKNOWN"),
+#         "line_instance": line_instance or existing.get("line_instance", 0),
+#         "call_reference": call_reference,
+#         "current_time": now,
+#         "call_started": call_started,
+#         "call_ended": call_ended,
+#         "last_update_source": source,
+#         "calling_party_name": calling_party_name or existing.get("calling_party_name", ""),
+#         "calling_party": calling_party or existing.get("calling_party", ""),
+#         "called_party_name": called_party_name or existing.get("called_party_name", ""),
+#         "called_party": called_party or existing.get("called_party", ""),
+#         "remote_name": remote_name or existing.get("remote_name", ""),
+#         "remote_number": remote_number or existing.get("remote_number", ""),
+#     }
+#
+#     if key not in client.state.calls_list:
+#         client.state.calls_list.append(key)
+#
+#     return key
+#
+#
+# def mark_call_ringing(client, call_reference, line_instance=0):
+#     key = update_call_state(
+#         client,
+#         call_reference=call_reference,
+#         line_instance=line_instance,
+#         call_state=4,
+#         call_state_name="RingIn",
+#         source="inferred",
+#     )
+#
+#     if key not in client.state.active_calls_list:
+#         client.state.active_calls_list.append(key)
+#
+#     client.state.call_active = True
+#     client.state.active_call = True
+#     client._call_epoch += 1
+#     client.state.last_call_epoch = client._call_epoch
+#     client.events.call_ringing.set()
+#     client.events.call_ended.clear()
+#
+#     return key
+#
+#
+# def mark_call_connected(client, call_reference, line_instance=0, source="inferred"):
+#     key = update_call_state(
+#         client,
+#         call_reference=call_reference,
+#         line_instance=line_instance,
+#         call_state=5,
+#         call_state_name="Connected",
+#         source=source,
+#     )
+#
+#     call = client.state.calls[key]
+#
+#     if call.get("call_started") is None or call.get("call_ended") is not None:
+#         call["call_started"] = datetime.datetime.now(datetime.timezone.utc)
+#         call["call_ended"] = None
+#
+#     if key not in client.state.active_calls_list:
+#         client.state.active_calls_list.append(key)
+#
+#     client.state.call_active = True
+#     client.state.active_call = True
+#     client.state.call_connected = True
+#     client.events.call_connected.set()
+#     client.events.call_ended.clear()
+#
+#     return key
+#
+#
+# def mark_call_ended(client, call_reference=None, source="inferred"):
+#     now = datetime.datetime.now(datetime.timezone.utc)
+#
+#     keys = []
+#
+#     if call_reference:
+#         keys = [str(call_reference)]
+#     else:
+#         keys = list(client.state.active_calls_list or [])
+#
+#     if not keys:
+#         selected = getattr(client.state, "selected_call_reference", None)
+#         if selected:
+#             keys = [str(selected)]
+#
+#     for key in keys:
+#         if key in client.state.calls:
+#             client.state.calls[key]["call_state"] = 2
+#             client.state.calls[key]["call_state_name"] = "OnHook"
+#             client.state.calls[key]["call_ended"] = now
+#             client.state.calls[key]["last_update_source"] = source
+#
+#         if key in client.state.active_calls_list:
+#             client.state.active_calls_list.remove(key)
+#
+#     if not client.state.active_calls_list:
+#         client.state.active_call = False
+#         client.state.call_active = False
+#         client.state.call_connected = False
+#         client.state.media_active = False
+#
+#     client.events.call_ringing.clear()
+#     client.events.call_connected.clear()
+#     client.events.media_started.clear()
+#     client.events.call_ended.set()
+
