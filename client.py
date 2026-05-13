@@ -7,7 +7,7 @@ from messages.register import send_register_req, send_unregister_req, build_ip_p
 from messages.keepalive import send_keepalive_req
 from state import PhoneState
 from utils.tftp import get_device_config_via_tftp
-from messages.generic import handle_softkey_press, TONE_FOLDER, TONE_LOOKUP
+from messages.generic import handle_softkey_press, handle_button_press, TONE_FOLDER, TONE_LOOKUP, send_onhook, send_offhook
 from audio_worker import LoopingAudioWorker
 import os
 import threading
@@ -218,6 +218,32 @@ class SCCPClient:
 
         if not key_found:
             self.logger.warning(f"({self.state.device_name}) No such softkey {softkey_name}")
+
+    def press_stimulus(self, button_type, instance):
+        # Simplified logic. Find the key in the softkey_template, send the event.
+        # key_defs = self.state.softkey_template
+        # key_found = False
+        # for k, v in key_defs.items():
+        #     active_call_ref = call_ref
+        #     active_line = line
+        #     if self.state.active_call and active_call_ref == 0:
+        #         active_line = self.state.active_call_line_instance
+        #         active_call_ref = int(self.state.calls.get(str(active_line), {}).get("call_reference", "0"))
+        #
+        #     if v["label"] == softkey_name:
+        #         handle_softkey_press(self, active_line, v["event"], active_call_ref)
+        #         key_found = True
+        handle_button_press(self, button_type, instance)
+
+        if not button_type or not instance:
+            self.logger.warning(f"({self.state.device_name}) No such button {button_type}/{instance}")
+
+    def on_hook(self):
+        send_onhook(self)
+        self.state.update_prompt("", 0)
+
+    def off_hook(self):
+        send_offhook(self)
 
     def wait_for_call(self, timeout=None, until="RING"):
         """
