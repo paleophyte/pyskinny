@@ -30,7 +30,9 @@ def enable_logging(args):
 def main():
     parser = argparse.ArgumentParser(description="Console Soft Phone (curses) using SCCPClient")
     parser.add_argument("--server", help="CallManager/CUCM server address (overrides config)")
-    parser.add_argument("--mac", help="Device name or MAC (e.g., SEPABCDEF012345)")
+    device_group = parser.add_mutually_exclusive_group()
+    device_group.add_argument("--mac", help="MAC address (e.g., ABCDEF012345)")
+    device_group.add_argument("--device", help="Full SCCP device name (e.g., SEPABCDEF012345)")
     parser.add_argument("--model", help="Phone model (e.g., Cisco 7970)")
     parser.add_argument("--line", type=int, default=1, help="Line instance to use for keypad/softkeys")
     parser.add_argument("--config", action="store_true", help="Load connection details from config file. Default=examples/cli.config")
