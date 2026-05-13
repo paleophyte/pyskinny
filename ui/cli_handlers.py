@@ -232,9 +232,10 @@ def exec_command_topology(client, clitext, argv, log):
 
 def exec_show_config(ctx, clitext, argv, log):
     cfg = ctx.config
-    log(f"server: {cfg.get('server')}")
-    log(f"mac:    {cfg.get('mac')}")
-    log(f"model:  {cfg.get('model')}")
+    log(f"server:       {cfg.get('server')}")
+    log(f"mac:          {cfg.get('mac')}")
+    log(f"device name:  {cfg.get('device')}")
+    log(f"model:        {cfg.get('model')}")
     log(f"auto_connect: {cfg.get('auto_connect')}")
     log("")
 
@@ -288,6 +289,13 @@ def exec_set_mac(ctx, clitext, argv, log):
     if not argv: return log("% Usage: set mac <hexmac>")
     ctx.config["mac"] = argv[2]
     log(f"mac = {ctx.config['mac']}")
+    log("")
+
+
+def exec_set_devname(ctx, clitext, argv, log):
+    if not argv: return log("% Usage: set devicename <string>")
+    ctx.config["device"] = argv[2]
+    log(f"device = {ctx.config['device']}")
     log("")
 
 
