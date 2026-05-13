@@ -10,6 +10,8 @@
       {"command":"%W",                                                    "function":"exec_auto_connect"}]},
     {"command":"mac",             "help":"Device MAC",                                                                                "subcommands":[
       {"command":"%W",                                                    "function":"exec_set_mac"}]},
+    {"command":"devicename",      "help":"Device Name",                                                                               "subcommands":[
+      {"command":"%W",                                                    "function":"exec_set_devname"}]},
     {"command":"model",           "help":"Phone model",                                                                               "subcommands":[
       {"command":"%W",                                                    "function":"exec_set_model"}]},
     {"command":"server",          "help":"CUCM address/host",                                                                         "subcommands":[
