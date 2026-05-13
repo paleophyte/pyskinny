@@ -118,6 +118,7 @@ DEVICE_TYPE_MAP = {
     7: "Cisco 7960",
     8: "Cisco 7940",
     9: "Cisco 7935",
+    14: "Virtual30SPplus",
     115: "Cisco 7941",
     119: "Cisco 7971",
     302: "Cisco 7985",
