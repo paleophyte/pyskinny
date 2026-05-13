@@ -10,12 +10,17 @@ from datetime import datetime, timezone
 
 
 class PhoneState:
-    def __init__(self, server=None, mac=None, model=None, port=2000):
+    def __init__(self, server=None, mac=None, device_name=None, model=None, port=2000):
         # Basics for registration
         self.server = server
+        self.source_port = 5001
         self.port = port
-        self.mac_address = normalize_mac_address(mac)
-        self.device_name = "SEP" + self.mac_address
+        if mac is not None:
+            self.mac_address = normalize_mac_address(mac)
+            self.device_name = "SEP" + self.mac_address
+        else:
+            self.mac_address = None
+            self.device_name = device_name
         self.model = get_device_enum(model)
         self.model_name = DEVICE_TYPE_MAP.get(self.model)
         self.client_ip = None
@@ -311,15 +316,17 @@ def build_state_from_args(args) -> PhoneState:
         # Try common keys used across the project; fall back if missing.
         server = cfg.get("server") or args.server
         mac = cfg.get("mac") or args.mac
+        device = cfg.get("device") or args.device
         model = cfg.get("model") or args.model
     else:
         server = args.server
         mac = args.mac
+        device = args.device
         model = args.model
 
-    if not server or not mac:
+    if not server and not (mac or device):
         raise SystemExit(
-            "Missing required connection details. Provide --model, --server and --mac (or use --config).")
+            "Missing required connection details. Provide --model, --server and (--mac or --device) (or use --config).")
 
     # Construct a minimal state; your PhoneState likely accepts these kwargs.
-    return PhoneState(server=server, mac=mac, model=model)
+    return PhoneState(server=server, mac=mac, device_name=device, model=model)
