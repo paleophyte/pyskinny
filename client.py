@@ -3,7 +3,7 @@ import socket
 import threading
 import logging
 from dispatcher import dispatch_message
-from messages.register import send_register_req, send_unregister_req
+from messages.register import send_register_req, send_unregister_req, build_ip_port_message
 from messages.keepalive import send_keepalive_req
 from state import PhoneState
 from utils.tftp import get_device_config_via_tftp
@@ -115,6 +115,8 @@ class SCCPClient:
 
     def _send_register(self):
         msg = send_register_req(self.state)
+        self.sock.sendall(msg)
+        msg = build_ip_port_message(self.state)
         self.sock.sendall(msg)
         self.logger.info(f"({self.state.device_name}) [SEND] RegisterReq")
 
