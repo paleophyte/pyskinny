@@ -2,7 +2,7 @@ import curses
 import time
 import threading
 from client import SCCPClient
-from messages.generic import handle_keypad_press, DEVICE_TYPE_MAP
+from messages.generic import handle_keypad_press, handle_button_press, DEVICE_TYPE_MAP
 from textwrap import wrap
 import logging
 from state import build_state_from_args
@@ -17,6 +17,11 @@ class ConsoleApp:
         self.ui_lock = threading.Lock()
         self.softkey_labels = []
         self.make_logging_handler()
+
+        self.action_labels = []
+        self.action_bindings = []
+        self.action_page = 0
+        self.actions_per_page = 8
 
         # Attach a curses-backed logging handler to the root logger
         self._log_handler = self.make_logging_handler()
@@ -71,35 +76,184 @@ class ConsoleApp:
         h.setFormatter(fmt)
         return h
 
-    def _refresh_softkeys(self):
-        if not self.client:
+    # def _refresh_softkeys(self):
+    #     if not self.client:
+    #         return
+    #     if not self.client.state:
+    #         return
+    #
+    #     if not self.client.state.is_registered.is_set():
+    #         self.client.state.is_registered.wait(timeout=30)
+    #
+    #         if not self.client.state.is_registered.is_set():
+    #             self.client.stop()
+    #             self.client.logger.error(f"({self.client.state.device_name}) Phone failed to register in time.")
+    #             return
+    #
+    #     max_keys = 12
+    #     # Build a stable order of softkey labels to map to F1..F12.
+    #
+    #     labels = []
+    #     scr = self.client.state.selected_call_reference
+    #     scr_call_state = None
+    #     if scr:
+    #         scr_call_state = self.client.state.selected_softkeys.get(str(scr), {}).get("softkeyset_index", None)
+    #     keys = self.client.state.get_current_softkeys(scr_call_state)
+    #     # self.client.logger.info(keys)
+    #     for lab in keys:
+    #         labels.append(lab[0])
+    #         if len(labels) >= max_keys:
+    #             break
+    #     self.softkey_labels = labels
+
+    def _toggle_hook(self):
+        state = self.client.state
+
+        has_active_call = bool(getattr(state, "active_call", False))
+        has_calls = bool(getattr(state, "calls", {}) or {})
+        speaker_mode = getattr(state, "speaker_mode", None)
+
+        # If we're in a call, Space/Enter should hang up.
+        if has_active_call:         # or has_calls or speaker_mode
+            self.client.on_hook()
+        else:
+            self.client.off_hook()
+
+    def _refresh_actions(self):
+        if not self.client or not self.client.state:
             return
-        if not self.client.state:
-            return
+
+        if self.client.state:
+            write_json_to_file("logs/client_state.json", self.client.state.to_dict())
 
         if not self.client.state.is_registered.is_set():
             self.client.state.is_registered.wait(timeout=30)
 
             if not self.client.state.is_registered.is_set():
                 self.client.stop()
-                self.client.logger.error(f"({self.client.state.device_name}) Phone failed to register in time.")
+                self.client.logger.error(
+                    f"({self.client.state.device_name}) Phone failed to register in time."
+                )
                 return
 
-        max_keys = 12
-        # Build a stable order of softkey labels to map to F1..F12.
+        # Prefer softkeys when present.
+        softkey_count = int(getattr(self.client.state, "total_softkey_count", 0) or 0)
+        softkey_template = getattr(self.client.state, "softkey_template", {}) or {}
 
+        if softkey_count > 0 or softkey_template:
+            self._refresh_softkey_actions()
+        else:
+            self._refresh_button_actions()
+
+    def _refresh_softkey_actions(self):
         labels = []
+        bindings = []
+
         scr = self.client.state.selected_call_reference
         scr_call_state = None
+
         if scr:
-            scr_call_state = self.client.state.selected_softkeys.get(str(scr), {}).get("softkeyset_index", None)
+            scr_call_state = (
+                self.client.state.selected_softkeys
+                .get(str(scr), {})
+                .get("softkeyset_index", None)
+            )
+
         keys = self.client.state.get_current_softkeys(scr_call_state)
-        # self.client.logger.info(keys)
+
         for lab in keys:
-            labels.append(lab[0])
-            if len(labels) >= max_keys:
-                break
-        self.softkey_labels = labels
+            label = lab[0]
+            labels.append(label)
+            bindings.append({
+                "kind": "softkey",
+                "label": label,
+            })
+
+        self.action_labels = labels
+        self.action_bindings = bindings
+
+    def _refresh_button_actions(self):
+        button_template = getattr(self.client.state, "button_template", {}) or {}
+
+        actions = []
+
+        for button_pos, button in sorted(
+                button_template.items(),
+                key=lambda item: int(item[0])
+        ):
+            button_type = int(button.get("type", 255))
+            instance = int(button.get("instance", 0) or 0)
+            type_name = button.get("type_name") or f"Type {button_type}"
+
+            # Skip undefined buttons.
+            if button_type == 255:
+                continue
+
+            label = self._button_label(
+                button_pos=button_pos,
+                button_type=button_type,
+                type_name=type_name,
+                instance=instance,
+            )
+
+            actions.append({
+                "kind": "button",
+                "button_pos": int(button_pos),
+                "button_type": button_type,
+                "instance": instance,
+                "label": label,
+            })
+
+        total_pages = max(1, (len(actions) + self.actions_per_page - 1) // self.actions_per_page)
+        self.action_page = max(0, min(self.action_page, total_pages - 1))
+
+        start = self.action_page * self.actions_per_page
+        end = start + self.actions_per_page
+        visible = actions[start:end]
+
+        self.action_labels = [a["label"] for a in visible]
+        self.action_bindings = visible
+
+    def _button_label(self, button_pos, button_type, type_name, instance):
+        if type_name == "Line":
+            line = getattr(self.client.state, "lines", {}).get(str(instance), {})
+            dn = line.get("line_dir_number")
+            return f"Line {instance}" + (f" {dn}" if dn else "")
+
+        if type_name == "Speed Dial":
+            sd = getattr(self.client.state, "speed_dials", {}).get(str(instance), {})
+            number = sd.get("speed_dial_number") or sd.get("number")
+            return f"SD {instance}" + (f" {number}" if number else "")
+
+        return type_name
+
+    def _press_action(self, action):
+        kind = action.get("kind")
+
+        if kind == "softkey":
+            label = action["label"]
+
+            scr = self.client.state.selected_call_reference or 0
+            if scr != 0:
+                scr_call_state = (
+                    self.client.state.calls
+                    .get(str(scr), {})
+                    .get("call_state", None)
+                )
+
+                if scr_call_state == 5 or label == "NewCall":
+                    scr = 0
+
+            self.client.press_softkey(label, line=self.line, call_ref=scr)
+            return
+
+        if kind == "button":
+            button_type = action["button_type"]
+            instance = action["instance"]
+
+            # Add this method on SCCPClient if you do not already have it.
+            self.client.press_stimulus(button_type, instance)
+            return
 
     def _handle_log_scrolling_key(self, ch, page_h):
         """Update scroll state based on keypress. Returns True if consumed."""
@@ -164,7 +318,7 @@ class ConsoleApp:
 
         # Start SCCP
         self.client.start()
-        self._refresh_softkeys()
+        self._refresh_actions()
 
         try:
             last_draw = 0
@@ -255,22 +409,46 @@ class ConsoleApp:
                     continue
 
                 # Softkeys bound to function keys F1..F12
+                # if isinstance(ch, int) and curses.KEY_F1 <= ch <= curses.KEY_F12:
+                #     idx = ch - curses.KEY_F1
+                #     if 0 <= idx < len(self.softkey_labels):
+                #         label = self.softkey_labels[idx]
+                #         try:
+                #             scr = self.client.state.selected_call_reference or 0
+                #             if scr != 0:
+                #                 scr_call_state = self.client.state.calls.get(str(scr), {}).get("call_state", None)
+                #                 if scr_call_state == 5 or label == "NewCall":
+                #                     # if call is connected or if the "NewCall" softkey is pressed, reset the
+                #                     #  call reference to 0 since it's the active call
+                #                     scr = 0
+                #
+                #             self.client.press_softkey(label, line=self.line, call_ref=scr)
+                #         except Exception:
+                #             pass
+                #     continue
+
                 if isinstance(ch, int) and curses.KEY_F1 <= ch <= curses.KEY_F12:
                     idx = ch - curses.KEY_F1
-                    if 0 <= idx < len(self.softkey_labels):
-                        label = self.softkey_labels[idx]
-                        try:
-                            scr = self.client.state.selected_call_reference or 0
-                            if scr != 0:
-                                scr_call_state = self.client.state.calls.get(str(scr), {}).get("call_state", None)
-                                if scr_call_state == 5 or label == "NewCall":
-                                    # if call is connected or if the "NewCall" softkey is pressed, reset the
-                                    #  call reference to 0 since it's the active call
-                                    scr = 0
 
-                            self.client.press_softkey(label, line=self.line, call_ref=scr)
+                    # F11 / F12 page button actions when in CM2-style button mode.
+                    has_softkeys = bool(getattr(self.client.state, "total_softkey_count", 0) or 0)
+
+                    if not has_softkeys and idx == self.actions_per_page:
+                        self.action_page = max(0, self.action_page - 1)
+                        self._refresh_actions()
+                        continue
+
+                    if not has_softkeys and idx == self.actions_per_page + 1:
+                        self.action_page += 1
+                        self._refresh_actions()
+                        continue
+
+                    if 0 <= idx < len(self.action_bindings):
+                        try:
+                            self._press_action(self.action_bindings[idx])
                         except Exception:
                             pass
+
                     continue
 
                 # Beep test
@@ -283,7 +461,21 @@ class ConsoleApp:
 
                 # Force refresh softkeys
                 if ch in ("r", "R"):
-                    self._refresh_softkeys()
+                    self._refresh_actions()
+                    continue
+
+                if ch in (" ", "\n", "\r", "`"):
+                    try:
+                        self._toggle_hook()
+                    except Exception:
+                        pass
+                    continue
+
+                if ch in ("h", "H"):
+                    try:
+                        self._toggle_hold()
+                    except Exception:
+                        pass
                     continue
 
         finally:
@@ -346,9 +538,11 @@ class ConsoleApp:
                 try:
                     dur = human_elapsed(info.get("call_started"), info.get("call_ended"))
                 except Exception:
-                    dur = self._human_elapsed_local(info.get("call_started"), info.get("call_ended"))
+                    dur = 0 #self._human_elapsed_local(info.get("call_started"), info.get("call_ended"))
             elif info.get("call_started"):
-                dur = self._human_elapsed_local(info.get("call_started"), info.get("call_ended"))
+                dur = 0 # self._human_elapsed_local(info.get("call_started"), info.get("call_ended"))
+            # held = " HELD" if info.get("held") else ""
+            # line_txt = f"{ref}  [{state_name}{held}]  {remote}  {dur}"
             line_txt = f"{ref}  [{state_name}]  {remote}  {dur}"
             attr = curses.A_REVERSE if idx == self._selected_call_idx else curses.A_NORMAL
             stdscr.addstr(row, left_pos, " " * (left_w - 4))
@@ -357,11 +551,23 @@ class ConsoleApp:
 
         softkeys_row = max(row + 1, 7)
         # Softkeys (F1..F12)
-        self._refresh_softkeys()
-        stdscr.addstr(softkeys_row, 2, "Softkeys (F1..F12):"[: left_w - 4])
+        # self._refresh_softkeys()
+        # stdscr.addstr(softkeys_row, 2, "Softkeys (F1..F12):"[: left_w - 4])
+        self._refresh_actions()
+
+        has_softkeys = bool(getattr(self.client.state, "total_softkey_count", 0) or 0)
+        if has_softkeys:
+            title = "Softkeys (F1..F12):"
+        else:
+            # title = f"Buttons (F1..F8, F9/F10 page) page {self.action_page + 1}:"
+            title = f"Buttons (F1..F{self.actions_per_page}, F{self.actions_per_page+1}/F{self.actions_per_page+2} page) page {self.action_page + 1}:"
+
+        stdscr.addstr(softkeys_row, 2, title[: left_w - 4])
+
         row = softkeys_row + 1
         col = 2
-        for i, label in enumerate(self.softkey_labels):
+        # for i, label in enumerate(self.softkey_labels):
+        for i, label in enumerate(self.action_labels):
             text = f"F{i+1}:{label}   "
             if col + len(text) >= left_w - 2:
                 row += 1
@@ -406,8 +612,16 @@ class ConsoleApp:
             stdscr.addstr(y, log_x + 1, line[:pane_w])
 
         # Footer / help
-        help1 = "Digits: 0-9 * #   Vol: +/-   Beep: b   Refresh: r   Quit: q   [/]/{/}/g/G: scroll logs   Ctrl-L: clear logs"
-        stdscr.addstr(h - 2, 1, help1[: max(1, w - 2)])
+        # help1 = "Digits: 0-9 * #   Vol: +/-   Beep: b   Refresh: r   Quit: q   [/]/{/}/g/G: scroll logs   Ctrl-L: clear logs"
+        help1 = (
+            "Digits: 0-9 * #   Hook: Space   Hold: h   Vol: +/-   "
+            "Beep: b   Refresh: r   Quit: q"
+        )
+        help2 = (
+            "[]{}gG: scroll logs   Ctrl-L: clear logs"
+        )
+        stdscr.addstr(h - 3, 1, help1[: max(1, w - 2)])
+        stdscr.addstr(h - 2, 1, help2[: max(1, w - 2)])
 
     def _active_calls_snapshot(self):
         state = getattr(self.client, 'state', None)
@@ -417,6 +631,56 @@ class ConsoleApp:
         refs = [str(r) for r in refs]
         details = dict(getattr(state, 'calls', {}) or {})
         return refs, details
+
+    def _current_call_key(self):
+        refs = list(self.client.state.active_calls_list or [])
+        if self.client.state.selected_call_reference:
+            return str(self.client.state.selected_call_reference)
+        if refs:
+            return str(refs[0])
+        return None
+
+    def _find_button_by_type_name(self, type_name):
+        template = getattr(self.client.state, "button_template", {}) or {}
+
+        for _, button in sorted(template.items(), key=lambda item: int(item[0])):
+            if button.get("type_name") == type_name:
+                return int(button.get("type", 0)), int(button.get("instance", 1) or 1)
+
+        return None, None
+
+
+    def _toggle_hold(self):
+        key = self._current_call_key()
+        if not key:
+            return
+
+        call = self.client.state.calls.get(key, {})
+        is_held = bool(call.get("held", False))
+
+        if is_held:
+            # CM2 VirtualPhone behavior: speaker/on-hook retrieves held call.
+            # TODO: Verify that this is the right way to unhold a call
+            self.client.off_hook()
+
+            call["held"] = False
+            call["call_state_name"] = "Connected"
+            self.client.state.call_connected = True
+            self.client.state.media_active = True
+            self.client.events.call_connected.set()
+        else:
+            # Use the button/stimulus value for Hold from the button template.
+            # button_type, instance = self._find_button_by_type_name("Hold")
+            # if button_type is not None:
+            #     self.client.handle_button_press(button_type, instance)
+            self.client.press_stimulus(0x0003, 1)
+
+            call["held"] = True
+            call["call_state_name"] = "Hold"
+            self.client.state.call_connected = False
+            self.client.state.media_active = False
+            self.client.events.call_connected.clear()
+            self.client.events.media_started.clear()
 
     def _sync_selected_to_refs(self, refs):
         if not refs:
