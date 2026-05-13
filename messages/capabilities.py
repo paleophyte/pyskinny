@@ -3,7 +3,7 @@ import calendar
 import time
 import datetime
 from dispatcher import register_handler
-from messages.generic import get_skinny_message, send_skinny_message, KEY_SET_INDEX_NAMES, SOFTKEY_TEMPLATE_INDEXES, SOFTKEY_INFO_INDEXES, Buf
+from messages.generic import get_skinny_message, send_skinny_message, KEY_SET_INDEX_NAMES, SOFTKEY_TEMPLATE_INDEXES, SOFTKEY_INFO_INDEXES, BUTTON_TYPES, Buf
 from utils.client import clean_bytes
 import logging
 logger = logging.getLogger(__name__)
@@ -160,11 +160,6 @@ def _register_available_lines(client, payload):
 
 @register_handler(0x0097, "ButtonTemplateRes")
 def parse_button_template(client, payload):
-    button_types = {
-        "2": "Speed Dial",
-        "9": "Line"
-    }
-
     button_offset, button_count, total_button_count = struct.unpack("<III", payload[:12])
     max_btn = int(len(payload[12:])/2)
     # logger.info(f"({client.state.device_name}) [RECV] ButtonTemplateRes ButtonOffset: {button_offset}, ButtonCount: {button_count}, TotalButtonCount: {total_button_count}, max: {max_btn}")
@@ -185,7 +180,7 @@ def parse_button_template(client, payload):
         btn_def = struct.unpack("<H", payload[offset:offset+2])[0]
         btn_index = btn_def & 0xFF
         btn_type = (btn_def >> 8) & 0xFF
-        btn_type_name = button_types.get(str(btn_type), "UNKNOWN")
+        btn_type_name = BUTTON_TYPES.get(str(btn_type), "UNKNOWN")
 
         # logger.debug(f"  Button {x+1}: Instance={btn_index}, Type={btn_type_name}")
         client.state.button_template[str(x + 1)] = {"instance": btn_index, "type": btn_type, "type_name": btn_type_name}
