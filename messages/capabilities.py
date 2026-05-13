@@ -340,16 +340,36 @@ def parse_config_stat(client, payload):
 @register_handler(0x0092, "LineStatRes")
 def parse_line_stat(client, payload):
     buf = Buf(payload)
+
     line_number = buf.read_u32()
     line_dir_number = buf.read_cstring(24)
-    line_fqdn = buf.read_cstring(40)
-    line_text_label = buf.read_cstring(40, "")                      # Missing in CallManager 3.1
-    line_display_options = buf.read_u32(0)                                    # Missing in CallManager 3.1
 
-    client.state.lines[str(line_number)] = {"line_dir_number": line_dir_number, "line_fully_qualified_display_name": line_fqdn, "line_text_label": line_text_label, "line_display_options": line_display_options, "line_display_options_str": f"{line_display_options:4b}"}
+    line_fqdn = ""
+    line_text_label = ""
+    line_display_options = 0
 
-    # logger.info(f"[RECV] LineStatRes lineNumber: {line_number}, lineDirNumber: {line_dir_number}, lineFullyQualifiedDisplayName: {line_fqdn}, lineTextLabel: {line_text_label}, lineDisplayOptions: {line_display_options}")
-    logger.info(f"({client.state.device_name}) [RECV] LineStatRes")
+    # Present in later CallManager versions, missing in CM 2.01.
+    if buf.remaining() >= 40:
+        line_fqdn = buf.read_cstring(40)
+
+    if buf.remaining() >= 40:
+        line_text_label = buf.read_cstring(40)
+
+    if buf.remaining() >= 4:
+        line_display_options = buf.read_u32(0)
+
+    client.state.lines[str(line_number)] = {
+        "line_dir_number": line_dir_number,
+        "line_fully_qualified_display_name": line_fqdn,
+        "line_text_label": line_text_label,
+        "line_display_options": line_display_options,
+        "line_display_options_str": f"{line_display_options:04b}",
+    }
+
+    logger.info(
+        f"({client.state.device_name}) [RECV] LineStatRes "
+        f"line={line_number} dn={line_dir_number!r}"
+    )
 
 
 @register_handler(0x0090, "ForwardStatRes")
