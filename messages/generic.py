@@ -185,6 +185,17 @@ STIMULUS_NAMES = {
     127: "HeadsetLED",
 }
 
+BUTTON_TYPES = {
+    "1": "Last Number Redial",
+    "2": "Speed Dial",
+    "5": "Forward All",
+    "9": "Line",
+    "15": "Voicemail",
+    "125": "Conference",
+    "126": "Call Park",
+    "253": "Aec",
+    "255": "Undefined",
+}
 
 CALL_STATE_NAMES = {
     0:  "Idle",          # No active call
