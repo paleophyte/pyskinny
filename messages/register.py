@@ -69,23 +69,55 @@ def send_register_req(state):
     return payload + extra_bytes
 
 
+@register_handler(0x0002, "IpPort")
+def build_ip_port_message(state) -> bytes:
+    payload = struct.pack("<I", state.source_port)
+    return struct.pack("<II", 8, 0) + struct.pack("<I", 0x0002) + payload
+
+
 @register_handler(0x0081, "RegisterAck")
 def parse_register_ack(client, payload):
     buf = Buf(payload)
+
     keepalive = buf.read_u32()
     date_template = buf.read_ascii(6)
-    padding = buf.read_u16()
-    second_keepalive = buf.read_u32()
-    max_protocol = buf.read_u8(0)                                               # Missing in CallManager 3.1
-    unknown = buf.read_u8(0)                                                    # Missing in CallManager 3.1
-    feature_flags = buf.read_u16(0)                                             # Missing in CallManager 3.1
-    logger.debug(f"feature_flags={feature_flags}")
+    trailing_u16 = buf.read_u16(0)
+
+    second_keepalive = None
+    max_protocol = 0
+    unknown = 0
+    feature_flags = 0
+
+    # Newer CallManager versions include more fields after the date template.
+    if buf.remaining() >= 4:
+        second_keepalive = buf.read_u32()
+
+    if buf.remaining() >= 1:
+        max_protocol = buf.read_u8(0)
+
+    if buf.remaining() >= 1:
+        unknown = buf.read_u8(0)
+
+    if buf.remaining() >= 2:
+        feature_flags = buf.read_u16(0)
 
     client.state.keepalive_interval = keepalive
     client.state.second_keepalive_interval = second_keepalive
     client.state.date_template = date_template
     client.state.feature_flags = feature_flags
     client.state.feature_flag_str = f"{feature_flags:016b}"
+
+    logger.debug(
+        "RegisterAck keepalive=%s date_template=%r trailing_u16=0x%04x "
+        "second_keepalive=%s max_protocol=%s unknown=%s feature_flags=0x%04x",
+        keepalive,
+        date_template,
+        trailing_u16,
+        second_keepalive,
+        max_protocol,
+        unknown,
+        feature_flags,
+    )
 
     logger.info(f"({client.state.device_name}) [RECV] RegisterAck")
 
