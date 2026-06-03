@@ -1,11 +1,8 @@
 """
 Run a minimal Skinny CallManager simulator with optional TFTP.
 
-  # Terminal 1 (port 69 often needs Administrator on Windows)
+  # Terminal 1 — TFTP tries port 69, auto-falls back to 6969 without admin
   python -m examples.run_simulator -v
-
-  # Non-privileged TFTP (pyskinny clients must use matching tftp port)
-  python -m examples.run_simulator --tftp-port 6969 -v
 
   # Terminal 2
   python -m examples.run_cli
@@ -43,7 +40,7 @@ def main() -> None:
         "--tftp-port",
         type=int,
         default=PRIVILEGED_TFTP_PORT,
-        help=f"TFTP UDP port (default: {PRIVILEGED_TFTP_PORT}; use 6969 without admin)",
+        help=f"TFTP UDP port (default: {PRIVILEGED_TFTP_PORT}, auto-fallback to 6969 if unprivileged)",
     )
     parser.add_argument(
         "--tftp-root",
@@ -61,13 +58,6 @@ def main() -> None:
     args = parser.parse_args()
 
     configure_logging_from_verbose(args.verbose)
-
-    if args.tftp_port == PRIVILEGED_TFTP_PORT and not args.no_tftp:
-        logging.info(
-            "TFTP port %s requires Administrator/root on most systems; "
-            "use --tftp-port 6969 for an unprivileged port.",
-            PRIVILEGED_TFTP_PORT,
-        )
 
     sim = SkinnySimulator(
         host=args.host,

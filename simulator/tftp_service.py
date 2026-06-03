@@ -21,6 +21,49 @@ from utils.client import get_local_ip
 logger = logging.getLogger(__name__)
 
 PRIVILEGED_TFTP_PORT = 69
+FALLBACK_TFTP_PORT = 6969
+
+
+def can_bind_udp_port(host: str, port: int) -> bool:
+    """Return True if a UDP socket can bind to host:port (probe only, no listen)."""
+    import socket
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.bind((host or "0.0.0.0", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+
+def resolve_tftp_listen_port(host: str, requested: int) -> int:
+    """
+    Pick the TFTP listen port.
+
+    When the default port 69 is requested but cannot be bound (typical without
+    Administrator/root), fall back to FALLBACK_TFTP_PORT (6969).
+    Any other explicit --tftp-port value is used as-is.
+    """
+    if requested != PRIVILEGED_TFTP_PORT:
+        return requested
+
+    bind_host = host if host else "0.0.0.0"
+    if can_bind_udp_port(bind_host, PRIVILEGED_TFTP_PORT):
+        return PRIVILEGED_TFTP_PORT
+
+    logger.warning(
+        "Cannot bind TFTP port %s on %s (usually requires Administrator/root). "
+        "Falling back to port %s. "
+        "pyskinny clients must use tftp_port=%s; hardware phones expect port %s.",
+        PRIVILEGED_TFTP_PORT,
+        bind_host,
+        FALLBACK_TFTP_PORT,
+        FALLBACK_TFTP_PORT,
+        PRIVILEGED_TFTP_PORT,
+    )
+    return FALLBACK_TFTP_PORT
 
 
 def resolve_advertise_host(bind_host: str, explicit: str | None = None) -> str:
@@ -53,7 +96,11 @@ class TftpConfigService:
         self.cm_host = cm_host
         self.skinny_port = skinny_port
         self.listen_host = listen_host
-        self.listen_port = listen_port
+        self.requested_port = listen_port
+        self.listen_port = resolve_tftp_listen_port(listen_host, listen_port)
+        self.fell_back_from_privileged = (
+            listen_port == PRIVILEGED_TFTP_PORT and self.listen_port != PRIVILEGED_TFTP_PORT
+        )
         self._root = Path(root) if root else Path(tempfile.mkdtemp(prefix="pyskinny-tftp-"))
         self._root.mkdir(parents=True, exist_ok=True)
         self._server: tftpy.TftpServer | None = None
@@ -136,14 +183,12 @@ class TftpConfigService:
         try:
             self._server.listen(self.listen_host, self.listen_port)
         except OSError as exc:
-            if self.listen_port == PRIVILEGED_TFTP_PORT:
-                logger.error(
-                    "Cannot bind TFTP port %s (%s). "
-                    "On Windows/macOS/Linux, port 69 usually requires Administrator/root, "
-                    "or use --tftp-port 6969 and point clients at that port.",
-                    PRIVILEGED_TFTP_PORT,
-                    exc,
-                )
+            logger.error(
+                "Cannot bind TFTP port %s on %s: %s",
+                self.listen_port,
+                self.listen_host,
+                exc,
+            )
             raise
 
     def stop(self) -> None:

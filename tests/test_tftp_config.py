@@ -5,7 +5,12 @@ import pytest
 import tftpy
 
 from simulator.tftp_config import build_sep_config, build_xml_default
-from simulator.tftp_service import TftpConfigService
+from simulator.tftp_service import (
+    FALLBACK_TFTP_PORT,
+    PRIVILEGED_TFTP_PORT,
+    TftpConfigService,
+    resolve_tftp_listen_port,
+)
 from simulator.registry import DeviceRegistry
 from utils.tftp import get_device_config_via_tftp
 
@@ -21,6 +26,28 @@ def test_build_sep_config_includes_dn():
     assert "1003" in xml
     assert "127.0.0.1" in xml
     assert "<featureID>9</featureID>" in xml
+
+
+def test_resolve_tftp_listen_port_non_default():
+    assert resolve_tftp_listen_port("0.0.0.0", 50321) == 50321
+
+
+def test_resolve_tftp_listen_port_fallback(monkeypatch):
+    monkeypatch.setattr("simulator.tftp_service.can_bind_udp_port", lambda _h, p: p != PRIVILEGED_TFTP_PORT)
+    assert resolve_tftp_listen_port("127.0.0.1", PRIVILEGED_TFTP_PORT) == FALLBACK_TFTP_PORT
+
+
+def test_resolve_tftp_listen_port_keeps_69_when_bindable(monkeypatch):
+    monkeypatch.setattr("simulator.tftp_service.can_bind_udp_port", lambda _h, _p: True)
+    assert resolve_tftp_listen_port("127.0.0.1", PRIVILEGED_TFTP_PORT) == PRIVILEGED_TFTP_PORT
+
+
+def test_tftp_service_fell_back_flag(monkeypatch):
+    monkeypatch.setattr("simulator.tftp_service.can_bind_udp_port", lambda _h, p: p != PRIVILEGED_TFTP_PORT)
+    reg = DeviceRegistry(dn_start=3000)
+    svc = TftpConfigService(reg, "127.0.0.1", listen_port=PRIVILEGED_TFTP_PORT)
+    assert svc.listen_port == FALLBACK_TFTP_PORT
+    assert svc.fell_back_from_privileged is True
 
 
 def _free_udp_port() -> int:

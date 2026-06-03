@@ -398,13 +398,11 @@ The simulator runs an embedded **TFTP** server (via `tftpy`) and serves:
 | `XMLDefault.cnf.xml` | Fallback — points phones at the simulator's Skinny port |
 | `SEP<MAC>.cnf.xml` | Per-device file with auto-assigned DN (created on first TFTP or Skinny register) |
 
-**Port 69** is the Cisco default but usually requires **Administrator** (Windows) or **root** (Linux). For local testing without elevation:
+**Port 69** is the Cisco default but usually requires **Administrator** (Windows) or **root** (Linux). If port 69 cannot be bound at startup, the simulator **automatically falls back to port 6969** and logs a warning.
 
-```bash
-python -m examples.run_simulator --tftp-port 6969 -v
-```
+For **pyskinny** clients when fallback occurs, set `tftp_port=6969` on `PhoneState`. Hardware phones normally only use port 69 unless you use DHCP option 150 with a custom setup or port redirect.
 
-Hardware phones normally only use port 69 unless you use DHCP option 150 with a custom setup. For **pyskinny** clients, set the TFTP port on `PhoneState` (`tftp_port=6969`) or extend your CLI to match.
+Force a specific port (no fallback): `--tftp-port 6969`.
 
 Pre-provision a MAC before a physical phone boots (TFTP happens before Skinny TCP):
 

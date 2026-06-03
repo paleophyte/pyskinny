@@ -95,10 +95,11 @@ class SkinnySimulator:
         )
         if self.tftp:
             logger.info(
-                "Phones should use CallManager / TFTP address %s (Skinny port %s, TFTP port %s)",
+                "Phones should use CallManager / TFTP address %s (Skinny port %s, TFTP port %s%s)",
                 self.tftp.cm_host,
                 self.port,
                 self.tftp.listen_port,
+                " — fell back from 69" if self.tftp.fell_back_from_privileged else "",
             )
         if background:
             self._thread = threading.Thread(target=self._serve_forever, name="skinny-sim", daemon=True)
