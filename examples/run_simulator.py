@@ -54,8 +54,24 @@ def main() -> None:
         default=[],
         help="Pre-generate SEP config for MAC (repeatable; for hardware phones that TFTP before Skinny)",
     )
+    parser.add_argument(
+        "--auto-answer",
+        action="append",
+        metavar="MAC",
+        default=[],
+        help="Auto-answer incoming calls for MAC/SEP (repeatable)",
+    )
+    parser.add_argument(
+        "--auto-answer-all",
+        action="store_true",
+        help="Auto-answer incoming calls on every registered phone",
+    )
     parser.add_argument("-v", "--verbose", action="count", default=0)
     args = parser.parse_args()
+
+    auto_answer = list(args.auto_answer)
+    if args.auto_answer_all:
+        auto_answer.append("*")
 
     configure_logging_from_verbose(args.verbose)
 
@@ -68,6 +84,7 @@ def main() -> None:
         tftp_port=args.tftp_port,
         advertise_host=args.advertise_host,
         tftp_root=args.tftp_root,
+        auto_answer=auto_answer or None,
     )
 
     for mac in args.provision:

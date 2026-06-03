@@ -6,6 +6,7 @@ import logging
 import socket
 import threading
 
+from simulator.call_hub import CallHub
 from simulator.registry import DeviceRegistry
 from simulator.session import SkinnySession
 from simulator.tftp_service import TftpConfigService, resolve_advertise_host
@@ -26,11 +27,16 @@ class SkinnySimulator:
         tftp_port: int = 69,
         advertise_host: str | None = None,
         tftp_root: str | None = None,
+        auto_answer: list[str] | None = None,
     ):
         self.host = host
         self.port = port
         self.server_name = server_name
         self.registry = DeviceRegistry(dn_start=dn_start)
+        self.hub = CallHub()
+        if auto_answer:
+            for target in auto_answer:
+                self.hub.set_auto_answer(target)
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -144,6 +150,7 @@ class SkinnySimulator:
             addr,
             self.registry,
             self.server_name,
+            self.hub,
             tftp=self.tftp,
         )
         session.run()

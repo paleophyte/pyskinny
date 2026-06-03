@@ -109,7 +109,7 @@ python -m examples.run_macro --server <server_ip_or_hostname> --mac <device_mac_
 2025-09-05 11:35:45,351 [MESSAGE] ui.macro_cli          : Press 'q' to quit
 
 # Using a macro from the CLI
-python -m examples.run_macro -vvvv --server <server_ip_or_hostname> --mac <device_mac_address> --model <device_model_number> --macro "WAIT 2,CALL 1001,WAIT 10,SOFTKEY EndCall"
+python -m examples.run_macro -vvvv --server <server_ip_or_hostname> --mac <device_mac_address> --model <device_model_number> --macro "WAIT 2,CALL 1001,HOLD,WAIT 2,RESUME,WAIT 5,TRANSFER 1002,END"
 2025-09-05 11:37:38,817 [MESSAGE] ui.macro_cli          : Executing: WAIT ['2']
 2025-09-05 11:37:40,822 [MESSAGE] ui.macro_cli          : Executing: CALL ['1001']
 2025-09-05 11:37:43,344 [MESSAGE] ui.macro_cli          : Executing: WAIT ['10']
@@ -144,7 +144,16 @@ phone# connect
 phone# phone call 1006
 Calling 1006 ...
 
-phone# show call
+phone# phone hold
+Hold
+
+phone# phone resume
+Resume
+
+phone# phone transfer 1007
+Blind transfer to 1007 ...
+
+phone# show calls
 Line   CallId    CallType      CallState      Time        FromNum      FromName        ToNum        ToName         
 1      16777221  OutBoundCall  Connected      2 seconds   1003         Python          1006         Python7971     
 
@@ -387,7 +396,7 @@ phone# set auto_connect true
 phone# connect
 ```
 
-Options: `--port`, `--dn-start`, `--host`, `--name`, `--no-tftp`, `--tftp-port`, `--tftp-root`, `--advertise-host`, `--provision MAC`.
+Options: `--port`, `--dn-start`, `--host`, `--name`, `--no-tftp`, `--tftp-port`, `--tftp-root`, `--advertise-host`, `--provision MAC`, `--auto-answer MAC`, `--auto-answer-all`.
 
 ### TFTP configs
 
@@ -412,15 +421,64 @@ python -m examples.run_simulator --provision 222233334444 --provision 2222333344
 
 Use `--advertise-host` when binding `0.0.0.0` so phone XML contains the lab IP phones can reach (not `0.0.0.0`).
 
+### Calls between two phones
+
+Two pyskinny clients registered to the simulator can call each other by DN (auto-assigned from 1000). The simulator routes on dialed digits, rings the callee, and connects on **Answer** (or off-hook while ringing).
+
+```bash
+# Terminal 1
+python -m examples.run_simulator -v
+
+# Terminal 2 — phone A (gets DN 1000)
+python -m examples.run_cli
+phone# set server 127.0.0.1
+phone# set mac AABBCCDDEE01
+phone# set model 7970
+phone# connect
+phone# show config
+
+# Terminal 3 — phone B (gets DN 1001)
+python -m examples.run_cli
+phone# set server 127.0.0.1
+phone# set mac AABBCCDDEE02
+phone# set model 7970
+phone# connect
+phone# show config
+
+# On phone A — dial phone B's DN from show config
+phone# call 1001
+# On phone B — answer when it rings
+phone# send softkey Answer
+phone# show calls
+```
+
+**Auto-answer** — on the CLI softphone:
+
+```bash
+phone# set auto_answer true
+phone# connect
+```
+
+Incoming calls are answered automatically via the `Answer` softkey. Persisted in `examples/cli.config` like other `set` options.
+
+On the **simulator**, auto-answer can be enabled server-side (useful for headless tests):
+
+```bash
+python -m examples.run_simulator -v --auto-answer AABBCCDDEE02
+python -m examples.run_simulator -v --auto-answer-all
+```
+
+RTP media is negotiated after connect (`OpenReceiveChannel` / `StartMediaTransmission`); audio path is basic but call state should reach **Connected**.
+
 This is not a full CUCM replacement — no call routing or AXL — but it is useful for lab automation and client development without a Windows CallManager VM.
 
 ---
 
 ## Roadmap / TODO / Ideas
-- [ ] Add ability to answer calls (and implement auto-answer) to run_cli.py
+- [x] Add ability to answer calls (and implement auto-answer) to run_cli.py
 - [ ] Try to add better call handling to run_cli.py (or to base SCCPClient). It's currently very difficult to manage multiple calls (i.e., place a call on hold and then dial a second number)
 - [x] CallManager simulator (lightweight CM server that phones can register to)
-- [ ] Simulator: outbound/inbound call signaling between two registered clients
+- [x] Simulator: outbound/inbound call signaling between two registered clients
 - [ ] SIP phone support
 - [x] Console based "GUI" SCCP Client
 - [ ] Wrap into a small **package** (`pip install pyskinny`)

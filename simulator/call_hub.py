@@ -1,0 +1,280 @@
+"""Inter-phone call routing for the Skinny simulator."""
+
+from __future__ import annotations
+
+import logging
+import socket
+import struct
+import threading
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+from simulator import payloads
+
+if TYPE_CHECKING:
+    from simulator.session import SkinnySession
+
+logger = logging.getLogger(__name__)
+
+
+def keypad_to_char(code: int) -> str | None:
+    if 0 <= code <= 9:
+        return str(code)
+    if 0x30 <= code <= 0x39:
+        return chr(code)
+    if code == 0x0E:
+        return "*"
+    if code == 0x0F:
+        return "#"
+    return None
+
+
+def ip_to_le_int(ip: str) -> int:
+    return struct.unpack("<I", socket.inet_aton(ip))[0]
+
+
+@dataclass
+class SimCall:
+    call_ref: int
+    caller: SkinnySession
+    callee: SkinnySession | None = None
+    line: int = 1
+    dialed: str = ""
+    state: str = "idle"
+    media_ports: dict = field(default_factory=dict)
+
+
+class CallHub:
+    """Routes calls between registered simulator sessions by DN."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._by_device: dict[str, SkinnySession] = {}
+        self._by_dn: dict[str, SkinnySession] = {}
+        self._calls: dict[int, SimCall] = {}
+        self._next_call_ref = 16777216
+        self.auto_answer_devices: set[str] = set()
+
+    def register_session(self, session: SkinnySession) -> None:
+        with self._lock:
+            self._by_device[session.device_name] = session
+            if session.directory_number:
+                self._by_dn[session.directory_number] = session
+
+    def unregister_session(self, session: SkinnySession) -> None:
+        with self._lock:
+            self._by_device.pop(session.device_name, None)
+            if session.directory_number:
+                self._by_dn.pop(session.directory_number, None)
+            for call_ref, call in list(self._calls.items()):
+                if session in (call.caller, call.callee):
+                    self.end_call(call_ref, source=session)
+
+    def set_auto_answer(self, mac_or_sep: str) -> None:
+        """Enable auto-answer for one device (* = all registered phones)."""
+        name = mac_or_sep.upper()
+        if name == "*":
+            self.auto_answer_devices.add("*")
+            return
+        if not name.startswith("SEP"):
+            from utils.client import normalize_mac_address
+
+            name = "SEP" + normalize_mac_address(name)
+        self.auto_answer_devices.add(name)
+
+    def session_for_dn(self, dn: str) -> SkinnySession | None:
+        with self._lock:
+            return self._by_dn.get(str(dn))
+
+    def should_auto_answer(self, session: SkinnySession) -> bool:
+        return "*" in self.auto_answer_devices or session.device_name in self.auto_answer_devices
+
+    def _alloc_call_ref(self) -> int:
+        ref = self._next_call_ref
+        self._next_call_ref += 1
+        return ref
+
+    def begin_outbound(self, caller: SkinnySession) -> SimCall:
+        with self._lock:
+            if caller.active_call is not None:
+                raise RuntimeError(f"{caller.device_name} already in a call")
+            call_ref = self._alloc_call_ref()
+            call = SimCall(call_ref=call_ref, caller=caller, state="dialing")
+            self._calls[call_ref] = call
+            caller.active_call = call
+            return call
+
+    def on_digit(self, caller: SkinnySession, digit: str) -> None:
+        call = caller.active_call
+        if not call or call.state != "dialing":
+            return
+
+        if digit == "#":
+            self._try_complete_dial(call)
+            return
+
+        call.dialed += digit
+        caller.send(
+            payloads.dialed_number(call.dialed, line=call.line, call_ref=call.call_ref)
+        )
+        self._try_complete_dial(call)
+
+    def _try_complete_dial(self, call: SimCall) -> None:
+        callee = self.session_for_dn(call.dialed)
+        if not callee or callee is call.caller:
+            return
+        if callee.active_call is not None:
+            logger.info("Call to busy DN %s ignored", call.dialed)
+            return
+
+        call.callee = callee
+        call.state = "ringing"
+        callee.active_call = call
+
+        caller_name = call.caller.device_name
+        callee_name = callee.device_name
+        caller_dn = call.caller.directory_number
+        callee_dn = callee.directory_number
+
+        logger.info(
+            "Ringing %s (%s) <- %s (%s) ref=%s",
+            callee_name,
+            callee_dn,
+            caller_name,
+            caller_dn,
+            call.call_ref,
+        )
+
+        call.caller.send_many([
+            payloads.stop_tone(call.line, call.call_ref),
+            payloads.call_state(payloads.CALL_STATE_RINGOUT, call.line, call.call_ref),
+            payloads.call_info(
+                caller_name, caller_dn, callee_name, callee_dn,
+                line=call.line, call_ref=call.call_ref, call_type=2,
+            ),
+            payloads.display_prompt_status("Ring Out", call.line, call.call_ref),
+            payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=8),
+        ])
+
+        call.callee.send_many([
+            payloads.call_state(payloads.CALL_STATE_RINGIN, call.line, call.call_ref),
+            payloads.call_info(
+                caller_name, caller_dn, callee_name, callee_dn,
+                line=call.line, call_ref=call.call_ref, call_type=1,
+            ),
+            payloads.start_tone(payloads.TONE_RING, call.line, call.call_ref),
+            payloads.display_prompt_status("Ring In", call.line, call.call_ref),
+            payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=3),
+        ])
+
+        if self.should_auto_answer(callee):
+            threading.Thread(
+                target=self._auto_answer_after_delay,
+                args=(callee,),
+                name=f"auto-answer-{callee.device_name}",
+                daemon=True,
+            ).start()
+
+    def _auto_answer_after_delay(self, session: SkinnySession) -> None:
+        import time
+
+        time.sleep(0.25)
+        self.answer(session)
+
+    def answer(self, session: SkinnySession) -> None:
+        call = session.active_call
+        if not call or call.state != "ringing":
+            return
+        if session is not call.callee:
+            return
+        self._connect(call)
+
+    def _connect(self, call: SimCall) -> None:
+        assert call.callee is not None
+        call.state = "connected"
+        caller = call.caller
+        callee = call.callee
+        caller_name = caller.device_name
+        callee_name = callee.device_name
+        caller_dn = caller.directory_number
+        callee_dn = callee.directory_number
+
+        logger.info("Connect call ref=%s %s <-> %s", call.call_ref, caller_dn, callee_dn)
+
+        for party in (caller, callee):
+            party.send_many([
+                payloads.stop_tone(call.line, call.call_ref),
+                payloads.call_state(payloads.CALL_STATE_CONNECTED, call.line, call.call_ref),
+                payloads.call_info(
+                    caller_name, caller_dn, callee_name, callee_dn,
+                    line=call.line, call_ref=call.call_ref,
+                    call_type=2 if party is caller else 1,
+                ),
+                payloads.display_prompt_status("Connected", call.line, call.call_ref),
+                payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=1),
+                payloads.open_receive_channel(call.call_ref),
+            ])
+            party.awaiting_media_ack = True
+
+    def on_media_ack(self, session: SkinnySession, payload: bytes) -> None:
+        call = session.active_call
+        if not call or call.state != "connected":
+            return
+        if len(payload) < 20:
+            return
+
+        port = struct.unpack("<I", payload[8:12])[0]
+        call.media_ports[id(session)] = port
+        session.awaiting_media_ack = False
+
+        if call.callee is None:
+            return
+        if id(call.caller) not in call.media_ports or id(call.callee) not in call.media_ports:
+            return
+
+        caller_ip = ip_to_le_int(call.caller.station_ip)
+        callee_ip = ip_to_le_int(call.callee.station_ip)
+        caller_port = call.media_ports[id(call.caller)]
+        callee_port = call.media_ports[id(call.callee)]
+
+        call.caller.send(
+            payloads.start_media_transmission(call.call_ref, callee_ip, callee_port)
+        )
+        call.callee.send(
+            payloads.start_media_transmission(call.call_ref, caller_ip, caller_port)
+        )
+        logger.info(
+            "Media started ref=%s (%s:%s <-> %s:%s)",
+            call.call_ref,
+            call.caller.station_ip,
+            caller_port,
+            call.callee.station_ip,
+            callee_port,
+        )
+
+    def end_call(self, call_ref: int | None = None, *, source: SkinnySession | None = None) -> None:
+        with self._lock:
+            if call_ref is None and source and source.active_call:
+                call_ref = source.active_call.call_ref
+            if call_ref is None:
+                return
+            call = self._calls.pop(call_ref, None)
+            if not call:
+                return
+
+            call.state = "ended"
+            parties = [call.caller]
+            if call.callee:
+                parties.append(call.callee)
+
+            for party in parties:
+                party.active_call = None
+                party.awaiting_media_ack = False
+                party.send_many([
+                    payloads.stop_tone(call.line, call.call_ref),
+                    payloads.call_state(payloads.CALL_STATE_ONHOOK, call.line, call.call_ref),
+                    payloads.display_prompt_status("Ready", call.line, 0),
+                    payloads.select_soft_keys(call.line, 0, softkey_set_index=0),
+                ])
+
+            logger.info("Call ended ref=%s", call.call_ref)

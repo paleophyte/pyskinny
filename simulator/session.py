@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import logging
 import socket
+import struct
+from typing import TYPE_CHECKING
 
 from simulator import payloads
+from simulator.call_hub import CallHub, keypad_to_char
 from simulator.protocol import parse_register_req, read_message
 from simulator.registry import DeviceRegistry
 from simulator.tftp_service import TftpConfigService
 
+if TYPE_CHECKING:
+    from simulator.call_hub import SimCall
+
 logger = logging.getLogger(__name__)
 
-# Client -> server message IDs handled during registration
 MSG_REGISTER_REQ = 0x0001
 MSG_IP_PORT = 0x0002
 MSG_KEEPALIVE = 0x0000
@@ -27,6 +32,11 @@ MSG_FORWARD_STAT_REQ = 0x0009
 MSG_REGISTER_AVAILABLE_LINES = 0x002D
 MSG_TIME_DATE_REQ = 0x000D
 MSG_UNREGISTER_REQ = 0x0027
+MSG_OFF_HOOK = 0x0006
+MSG_ON_HOOK = 0x0007
+MSG_KEYPAD = 0x0003
+MSG_SOFTKEY = 0x0026
+MSG_OPEN_RX_ACK = 0x0034
 
 
 class SkinnySession:
@@ -36,17 +46,23 @@ class SkinnySession:
         addr: tuple,
         registry: DeviceRegistry,
         server_name: str,
+        hub: CallHub,
         tftp: TftpConfigService | None = None,
     ):
         self.conn = conn
         self.addr = addr
         self.registry = registry
         self.server_name = server_name
+        self.hub = hub
         self.tftp = tftp
         self.device_name = ""
         self.directory_number = ""
+        self.station_ip = ""
+        self.source_port = 5001
         self._registered = False
         self._lines = 1
+        self.active_call: SimCall | None = None
+        self.awaiting_media_ack = False
 
     def run(self) -> None:
         try:
@@ -60,6 +76,7 @@ class SkinnySession:
         except (ConnectionResetError, BrokenPipeError, OSError) as exc:
             logger.debug("Session %s closed: %s", self.device_name or self.addr, exc)
         finally:
+            self.hub.unregister_session(self)
             try:
                 self.conn.close()
             except OSError:
@@ -71,23 +88,26 @@ class SkinnySession:
                     self.directory_number or "?",
                 )
 
-    def _send(self, packet: bytes) -> None:
+    def send(self, packet: bytes) -> None:
         self.conn.sendall(packet)
 
-    def _send_many(self, packets: list[bytes]) -> None:
+    def send_many(self, packets: list[bytes]) -> None:
         for packet in packets:
-            self._send(packet)
+            self.send(packet)
 
     def _handle(self, msg_id: int, payload: bytes) -> bool:
         if msg_id == MSG_REGISTER_REQ:
             return self._on_register(payload)
         if msg_id == MSG_IP_PORT:
+            if len(payload) >= 4:
+                self.source_port = struct.unpack("<I", payload[:4])[0]
             return True
         if msg_id == MSG_KEEPALIVE:
-            self._send(payloads.keepalive_ack())
+            self.send(payloads.keepalive_ack())
             return True
         if msg_id == MSG_UNREGISTER_REQ:
-            self._send(payloads.unregister_ack(0))
+            self.hub.end_call(source=self)
+            self.send(payloads.unregister_ack(0))
             return False
         if not self.device_name:
             logger.debug("Ignoring msg 0x%04X before registration from %s", msg_id, self.addr)
@@ -96,16 +116,16 @@ class SkinnySession:
         if msg_id == MSG_CAPABILITIES_RES:
             return True
         if msg_id == MSG_BUTTON_TEMPLATE_REQ:
-            self._send(payloads.button_template_res())
+            self.send(payloads.button_template_res())
             return True
         if msg_id == MSG_SOFTKEY_TEMPLATE_REQ:
-            self._send(payloads.softkey_template_res())
+            self.send(payloads.softkey_template_res())
             return True
         if msg_id == MSG_SOFTKEY_SET_REQ:
-            self._send(payloads.softkey_set_res())
+            self.send(payloads.softkey_set_res())
             return True
         if msg_id == MSG_CONFIG_STAT_REQ:
-            self._send(
+            self.send(
                 payloads.config_stat_res(
                     self.device_name,
                     self.server_name,
@@ -116,15 +136,15 @@ class SkinnySession:
             return True
         if msg_id == MSG_LINE_STAT_REQ:
             line = self._read_u32(payload, default=1)
-            self._send(payloads.line_stat_res(line, self.directory_number))
+            self.send(payloads.line_stat_res(line, self.directory_number))
             return True
         if msg_id == MSG_FORWARD_STAT_REQ:
             line = self._read_u32(payload, default=1)
-            self._send(payloads.forward_stat_res(line))
+            self.send(payloads.forward_stat_res(line))
             return True
         if msg_id == MSG_SPEED_DIAL_STAT_REQ:
             sd = self._read_u32(payload, default=1)
-            self._send(payloads.speed_dial_stat_res(sd))
+            self.send(payloads.speed_dial_stat_res(sd))
             return True
         if msg_id == MSG_REGISTER_AVAILABLE_LINES:
             if len(payload) >= 4:
@@ -132,6 +152,19 @@ class SkinnySession:
             return True
         if msg_id == MSG_TIME_DATE_REQ:
             self._finish_registration()
+            return True
+
+        if msg_id == MSG_OFF_HOOK:
+            return self._on_off_hook()
+        if msg_id == MSG_ON_HOOK:
+            self.hub.end_call(source=self)
+            return True
+        if msg_id == MSG_KEYPAD:
+            return self._on_keypad(payload)
+        if msg_id == MSG_SOFTKEY:
+            return self._on_softkey(payload)
+        if msg_id == MSG_OPEN_RX_ACK:
+            self.hub.on_media_ack(self, payload)
             return True
 
         logger.debug(
@@ -145,6 +178,7 @@ class SkinnySession:
     def _on_register(self, payload: bytes) -> bool:
         info = parse_register_req(payload)
         self.device_name = info.device_name
+        self.station_ip = info.station_ip
         self.directory_number = self.registry.assign(self.device_name)
         if self.tftp:
             self.tftp.write_device_config(self.device_name, self.directory_number)
@@ -156,25 +190,68 @@ class SkinnySession:
             info.device_type,
             info.station_ip,
         )
-        self._send(payloads.register_ack())
-        self._send(payloads.capabilities_req())
+        self.send(payloads.register_ack())
+        self.send(payloads.capabilities_req())
         return True
 
     def _finish_registration(self) -> None:
-        self._send(payloads.time_date_res())
-        self._send(payloads.display_prompt_status("Ready"))
-        self._send(payloads.select_soft_keys())
+        self.send(payloads.time_date_res())
+        self.send(payloads.display_prompt_status("Ready"))
+        self.send(payloads.select_soft_keys())
         self._registered = True
+        self.hub.register_session(self)
         logger.info(
             "(%s) registration complete — DN %s",
             self.device_name,
             self.directory_number,
         )
 
+    def _on_off_hook(self) -> bool:
+        if self.active_call and self.active_call.state == "ringing" and self is self.active_call.callee:
+            self.hub.answer(self)
+            return True
+        if self.active_call is None:
+            self._start_outbound()
+        return True
+
+    def _on_softkey(self, payload: bytes) -> bool:
+        if len(payload) < 12:
+            return True
+        softkey_id, _line, _call_ref = struct.unpack("<III", payload[:12])
+        if softkey_id == payloads.SK_NEWCALL:
+            self._start_outbound()
+        elif softkey_id == payloads.SK_ANSWER:
+            self.hub.answer(self)
+        elif softkey_id == payloads.SK_ENDCALL:
+            self.hub.end_call(source=self)
+        return True
+
+    def _start_outbound(self) -> None:
+        if self.active_call is not None:
+            return
+        try:
+            call = self.hub.begin_outbound(self)
+        except RuntimeError:
+            return
+        self.send_many([
+            payloads.activate_call_plane(call.line),
+            payloads.call_state(payloads.CALL_STATE_PROCEED, call.line, call.call_ref),
+            payloads.start_tone(payloads.TONE_DIAL, call.line, call.call_ref),
+            payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=4),
+            payloads.display_prompt_status("", call.line, call.call_ref),
+        ])
+
+    def _on_keypad(self, payload: bytes) -> bool:
+        if len(payload) < 4:
+            return True
+        kp_button = struct.unpack("<I", payload[:4])[0]
+        ch = keypad_to_char(kp_button)
+        if ch:
+            self.hub.on_digit(self, ch)
+        return True
+
     @staticmethod
     def _read_u32(payload: bytes, default: int = 0) -> int:
         if len(payload) < 4:
             return default
-        import struct
-
         return struct.unpack("<I", payload[:4])[0]

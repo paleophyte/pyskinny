@@ -7,7 +7,7 @@ from messages.register import send_register_req, send_unregister_req, build_ip_p
 from messages.keepalive import send_keepalive_req
 from state import PhoneState
 from utils.tftp import get_device_config_via_tftp
-from messages.generic import handle_softkey_press, handle_button_press, TONE_FOLDER, TONE_LOOKUP, send_onhook, send_offhook
+from messages.generic import handle_softkey_press, handle_keypad_press, handle_button_press, TONE_FOLDER, TONE_LOOKUP, send_onhook, send_offhook
 from audio_worker import LoopingAudioWorker
 import os
 import threading
@@ -205,23 +205,50 @@ class SCCPClient:
 
         return "ok", msg_id, data_length, payload
 
+    def resolve_call_target(self, line=1, call_ref=0) -> tuple[int, int]:
+        """Resolve line + call reference for softkey/stimulus messages."""
+        active_line = line or 1
+        active_call_ref = call_ref
+        if call_ref == 0 and self.state.active_call:
+            active_line = getattr(self.state, "active_call_line_instance", None) or active_line
+            ref = getattr(self.state, "selected_call_reference", None)
+            if ref is None and self.state.active_calls_list:
+                ref = self.state.active_calls_list[0]
+            if ref is not None:
+                active_call_ref = int(ref)
+                call = self.state.calls.get(str(ref), {})
+                if call.get("line_instance"):
+                    active_line = int(call["line_instance"])
+        return active_line, active_call_ref
+
     def press_softkey(self, softkey_name, line=1, call_ref=0):
-        # Simplified logic. Find the key in the softkey_template, send the event.
-        key_defs = self.state.softkey_template
-        key_found = False
-        for k, v in key_defs.items():
-            active_call_ref = call_ref
-            active_line = line
-            if self.state.active_call and active_call_ref == 0:
-                active_line = self.state.active_call_line_instance
-                active_call_ref = int(self.state.calls.get(str(active_line), {}).get("call_reference", "0"))
-
-            if v["label"] == softkey_name:
+        key_defs = self.state.softkey_template or {}
+        active_line, active_call_ref = self.resolve_call_target(line, call_ref)
+        for v in key_defs.values():
+            if v.get("label") == softkey_name:
                 handle_softkey_press(self, active_line, v["event"], active_call_ref)
-                key_found = True
+                return
+        self.logger.warning(f"({self.state.device_name}) No such softkey {softkey_name}")
 
-        if not key_found:
-            self.logger.warning(f"({self.state.device_name}) No such softkey {softkey_name}")
+    def blind_transfer(self, number: str, *, pause: float = 0.3) -> None:
+        """Blind transfer active call: Transfer -> dial -> Transfer."""
+        import time
+
+        self.press_softkey("Transfer")
+        time.sleep(pause)
+        for ch in number:
+            if ch == "*":
+                code = 0x0E
+            elif ch == "#":
+                code = 0x0F
+            elif ch.isdigit():
+                code = int(ch)
+            else:
+                continue
+            handle_keypad_press(self, 1, code)
+            time.sleep(0.05)
+        time.sleep(pause)
+        self.press_softkey("Transfer")
 
     def press_stimulus(self, button_type, instance):
         # Simplified logic. Find the key in the softkey_template, send the event.

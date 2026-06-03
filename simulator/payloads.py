@@ -2,9 +2,29 @@
 
 from __future__ import annotations
 
-import calendar
 import struct
 import time
+
+
+def _cstring(text: str, length: int) -> bytes:
+    return text.encode("ascii", errors="replace")[: length - 1].ljust(length, b"\x00")
+
+
+# SCCP call-state values (subset)
+CALL_STATE_ONHOOK = 2
+CALL_STATE_RINGOUT = 3
+CALL_STATE_RINGIN = 4
+CALL_STATE_CONNECTED = 5
+CALL_STATE_PROCEED = 12
+
+# Skinny soft-key events (match messages/generic.py)
+SK_NEWCALL = 2
+SK_ANSWER = 11
+SK_ENDCALL = 9
+
+# Cisco tone IDs used by pyskinny client
+TONE_DIAL = 33
+TONE_RING = 36
 
 
 def register_ack(keepalive: int = 30) -> bytes:
@@ -40,6 +60,7 @@ def softkey_template_res() -> bytes:
     keys = [
         (b"Redial\x00", 1),
         (b"NewCall\x00", 2),
+        (b"Answer\x00", 11),
         (b"Hold\x00", 3),
         (b"EndCall\x00", 9),
     ]
@@ -53,14 +74,120 @@ def softkey_template_res() -> bytes:
 def softkey_set_res() -> bytes:
     from simulator.protocol import pack_message
 
-    # One set: On Hook — template indices 2, 1, 3, 9 (NewCall, Redial, Hold, EndCall)
-    skti = bytes([2, 1, 3, 9] + [0] * 12)
+    skti = bytes([2, 1, 11, 3, 9] + [0] * 11)
     skii = b""
-    for info_id in (302, 301, 303, 309):
+    for info_id in (302, 301, 311, 303, 309):
         skii += struct.pack("<H", info_id)
     skii = skii.ljust(32, b"\x00")
     body = struct.pack("<III", 0, 1, 1) + skti + skii
     return pack_message(0x0109, body)
+
+
+def call_state(
+    state: int,
+    line: int = 1,
+    call_ref: int = 0,
+) -> bytes:
+    from simulator.protocol import pack_message
+
+    body = struct.pack("<III", state, line, call_ref)
+    body += struct.pack("<III", 0, 0, 0)
+    return pack_message(0x0111, body)
+
+
+def call_info(
+    caller_name: str,
+    caller_num: str,
+    called_name: str,
+    called_num: str,
+    *,
+    line: int = 1,
+    call_ref: int = 0,
+    call_type: int = 2,
+) -> bytes:
+    from simulator.protocol import pack_message
+
+    body = _cstring(caller_name, 40)
+    body += _cstring(caller_num, 24)
+    body += _cstring(called_name, 40)
+    body += _cstring(called_num, 24)
+    body += struct.pack("<III", line, call_ref, call_type)
+    return pack_message(0x008F, body)
+
+
+def start_tone(tone: int, line: int = 1, call_ref: int = 0) -> bytes:
+    from simulator.protocol import pack_message
+
+    return pack_message(0x0082, struct.pack("<IIII", tone, 0, line, call_ref))
+
+
+def stop_tone(line: int = 1, call_ref: int = 0) -> bytes:
+    from simulator.protocol import pack_message
+
+    return pack_message(0x0083, struct.pack("<II", line, call_ref))
+
+
+def activate_call_plane(line: int = 1) -> bytes:
+    from simulator.protocol import pack_message
+
+    return pack_message(0x0116, struct.pack("<I", line))
+
+
+def dialed_number(number: str, line: int = 1, call_ref: int = 0) -> bytes:
+    from simulator.protocol import pack_message
+
+    body = _cstring(number, 24)
+    body += struct.pack("<II", line, call_ref)
+    return pack_message(0x011D, body)
+
+
+def open_receive_channel(call_ref: int = 0, ptime_ms: int = 20) -> bytes:
+    from simulator.protocol import pack_message
+
+    body = struct.pack(
+        "<IIIIIIIIHH",
+        0,
+        0,
+        ptime_ms,
+        0,
+        0,
+        0,
+        call_ref,
+        0,
+        0,
+        0,
+    )
+    body += b"\x00" * 32
+    return pack_message(0x0105, body)
+
+
+def start_media_transmission(
+    call_ref: int,
+    remote_ip: int,
+    remote_port: int,
+    *,
+    ptime_ms: int = 20,
+) -> bytes:
+    from simulator.protocol import pack_message
+
+    body = struct.pack(
+        "<IIIIIIIIHH",
+        0,
+        0,
+        remote_ip,
+        remote_port,
+        ptime_ms,
+        0,
+        0,
+        0,
+        0,
+        1,
+    )
+    body += struct.pack("<I", 0)
+    body += struct.pack("<I", call_ref)
+    body += struct.pack("<HH", 0, 0)
+    body += b"\x00" * 32
+    return pack_message(0x008A, body)
 
 
 def config_stat_res(device_name: str, server_label: str, lines: int = 1, speed_dials: int = 0) -> bytes:

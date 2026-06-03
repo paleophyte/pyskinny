@@ -330,6 +330,11 @@ def run_macro(client: SCCPClient, instructions, labels, stop_event: threading.Ev
             client.press_softkey("Hold")
         elif cmd == "RESUME":
             client.press_softkey("Resume")
+        elif cmd == "TRANSFER":
+            if args:
+                client.blind_transfer("".join(args))
+            else:
+                client.press_softkey("Transfer")
         elif cmd == "END":
             client.press_softkey("EndCall")
         elif cmd == "PLAY":

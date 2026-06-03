@@ -47,6 +47,54 @@ def exec_exit(client, clitext, argv, log):
     raise SystemExit
 
 
+def _require_client(ctx, log):
+    if ctx.client is None:
+        log("% Not connected")
+        return None
+    return ctx.client
+
+
+def exec_phone_hold(ctx, clitext, argv, log):
+    client = _require_client(ctx, log)
+    if not client:
+        return
+    log("Hold")
+    client.press_softkey("Hold")
+    log("")
+
+
+def exec_phone_resume(ctx, clitext, argv, log):
+    client = _require_client(ctx, log)
+    if not client:
+        return
+    log("Resume")
+    client.press_softkey("Resume")
+    log("")
+
+
+def exec_phone_end(ctx, clitext, argv, log):
+    client = _require_client(ctx, log)
+    if not client:
+        return
+    log("End call")
+    client.press_softkey("EndCall")
+    log("")
+
+
+def exec_phone_transfer(ctx, clitext, argv, log):
+    client = _require_client(ctx, log)
+    if not client:
+        return
+    if len(argv) >= 3:
+        number = argv[2]
+        log(f"Blind transfer to {number} ...")
+        client.blind_transfer(number)
+    else:
+        log("Transfer")
+        client.press_softkey("Transfer")
+    log("")
+
+
 def exec_call_number(client, clitext, argv, log):
     if not argv:
         log("% Missing number")
@@ -237,6 +285,7 @@ def exec_show_config(ctx, clitext, argv, log):
     log(f"device name:  {cfg.get('device')}")
     log(f"model:        {cfg.get('model')}")
     log(f"auto_connect: {cfg.get('auto_connect')}")
+    log(f"auto_answer:  {cfg.get('auto_answer', False)}")
     log("")
 
 

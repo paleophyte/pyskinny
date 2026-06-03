@@ -5,7 +5,8 @@ DEFAULT_CONFIG = {
     "server": "",
     "mac":    "",
     "model":  "",
-    "auto_connect": True    # you can toggle this from CLI if you like
+    "auto_connect": True,
+    "auto_answer": False,
 }
 
 def config_path_from_here() -> str:

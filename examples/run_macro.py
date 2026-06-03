@@ -5,7 +5,7 @@ from client import SCCPClient
 from config import load_config
 from state import PhoneState
 from utils.client import write_json_to_file
-from utils.logs import configure_logging_from_verbose
+from utils.logs import configure_logging_from_verbose, ensure_message_log_level
 import logging
 import os, sys, time, threading, signal
 import re
@@ -153,6 +153,7 @@ def main():
     model = args.model
     macro_text = load_macro_text(args.macro, args.macro_file)
     log_level = configure_logging_from_verbose(args.verbose)
+    ensure_message_log_level()
     logging.getLogger(__name__).debug("Log level set to: %s", logging.getLevelName(log_level))
 
     state = PhoneState(server=server, mac=mac, model=model)

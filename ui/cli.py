@@ -373,12 +373,16 @@ class CLIPhone:
         self.config_path = config_path_from_here()
         self.config = load_config(self.config_path) or {}
         # ensure keys exist
-        for k in ("server","mac","device","model","auto_connect"):
-            self.config.setdefault(k, "" if k!="auto_connect" else True)
+        for k in ("server", "mac", "device", "model", "auto_connect", "auto_answer"):
+            if k in ("auto_connect", "auto_answer"):
+                self.config.setdefault(k, False)
+            else:
+                self.config.setdefault(k, "")
 
         self.client = None
         self.state = None
         self.stop_event = threading.Event()
+        self._auto_answer_thread: threading.Thread | None = None
         self.enable_cdp = False
         self.enable_lldp = False
         self.enable_lsp = False
@@ -428,7 +432,44 @@ class CLIPhone:
             return False
 
         self.logger.info("Connected.")
+        self._start_auto_answer_watcher()
         return True
+
+    def _start_auto_answer_watcher(self) -> None:
+        self._stop_auto_answer_watcher()
+        self._auto_answer_thread = threading.Thread(
+            target=self._auto_answer_loop,
+            name="cli-auto-answer",
+            daemon=True,
+        )
+        self._auto_answer_thread.start()
+
+    def _stop_auto_answer_watcher(self) -> None:
+        if self._auto_answer_thread and self._auto_answer_thread.is_alive():
+            # loop exits when client is None
+            pass
+        self._auto_answer_thread = None
+
+    def _auto_answer_loop(self) -> None:
+        while self.client is not None and not self.stop_event.is_set():
+            if not self.config.get("auto_answer"):
+                time.sleep(0.25)
+                continue
+            if self.client.events.call_ringing.wait(timeout=0.5):
+                if self.client.state.call_connected:
+                    self.client.events.call_ringing.clear()
+                    continue
+                try:
+                    time.sleep(0.15)
+                    self.client.press_softkey("Answer")
+                    self.logger.info(
+                        "(%s) auto_answer: answered incoming call",
+                        self.client.state.device_name,
+                    )
+                except Exception as exc:
+                    self.logger.debug("auto_answer failed: %s", exc)
+                finally:
+                    self.client.events.call_ringing.clear()
 
     def disconnect(self):
         if self.client is None:
@@ -439,6 +480,7 @@ class CLIPhone:
         finally:
             self.client = None
             self.state  = None
+            self._stop_auto_answer_watcher()
 
     def save(self):
         save_config(self.config_path, self.config)
