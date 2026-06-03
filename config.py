@@ -9,13 +9,18 @@ DEFAULT_CONFIG = {
 }
 
 def config_path_from_here() -> str:
-    # Go up one level from this file, then into examples/cli.config
-    here = os.path.dirname(__file__)                 # current directory
-    if os.path.exists(os.path.join(here, "examples", "cli.config")):
-        return os.path.join(here, "examples", "cli.config")
+    """Return the default examples/cli.config path relative to the repo root."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(here, "examples", "cli.config")
 
-    parent = os.path.dirname(here)                   # one level up
-    return os.path.join(parent, "examples", "cli.config")
+
+def resolve_config_path(config_arg) -> str | None:
+    """Map CLI --config (True) or an explicit path to a config file path."""
+    if not config_arg:
+        return None
+    if config_arg is True:
+        return config_path_from_here()
+    return str(config_arg)
 
 
 def load_config(path: str) -> dict | None:

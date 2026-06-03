@@ -5,7 +5,7 @@ from datetime import datetime
 import json
 import threading
 import time
-from config import load_config
+from config import load_config, resolve_config_path
 from datetime import datetime, timezone
 
 
@@ -307,26 +307,32 @@ class PhoneState:
 
 
 def build_state_from_args(args) -> PhoneState:
-    # Prefer a project-specific loader if available (lets you keep your existing config).
-    cfg = None
-    if args.config:
-        cfg = load_config(args.config)
+    cfg_path = resolve_config_path(getattr(args, "config", None))
+    cfg = load_config(cfg_path) if cfg_path else None
 
     if cfg:
-        # Try common keys used across the project; fall back if missing.
-        server = cfg.get("server") or args.server
-        mac = cfg.get("mac") or args.mac
-        device = cfg.get("device") or args.device
-        model = cfg.get("model") or args.model
+        server = cfg.get("server") or getattr(args, "server", None)
+        mac = cfg.get("mac") or getattr(args, "mac", None)
+        device = cfg.get("device") or getattr(args, "device", None)
+        model = cfg.get("model") or getattr(args, "model", None)
     else:
-        server = args.server
-        mac = args.mac
-        device = args.device
-        model = args.model
+        server = getattr(args, "server", None)
+        mac = getattr(args, "mac", None)
+        device = getattr(args, "device", None)
+        model = getattr(args, "model", None)
 
-    if not server and not (mac or device):
+    missing = []
+    if not server:
+        missing.append("--server")
+    if not model:
+        missing.append("--model")
+    if not (mac or device):
+        missing.append("--mac or --device")
+    if missing:
         raise SystemExit(
-            "Missing required connection details. Provide --model, --server and (--mac or --device) (or use --config).")
+            "Missing required connection details: "
+            + ", ".join(missing)
+            + ". Provide them on the command line or use --config with a complete examples/cli.config."
+        )
 
-    # Construct a minimal state; your PhoneState likely accepts these kwargs.
     return PhoneState(server=server, mac=mac, device_name=device, model=model)

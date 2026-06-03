@@ -5,21 +5,13 @@ from client import SCCPClient
 from config import load_config
 from state import PhoneState
 from utils.client import write_json_to_file
-from utils.logs import addLoggingLevel
+from utils.logs import configure_logging_from_verbose
 import logging
 import os, sys, time, threading, signal
 import re
 
 
 LABEL_LINE = re.compile(r'^\s*([A-Za-z_][\w\-]*)\s*:\s*$')
-
-
-MESSAGE_LOG_LEVEL = logging.WARNING - 5
-addLoggingLevel('MESSAGE', MESSAGE_LOG_LEVEL)
-def message(self, msg, *args, **kws):
-    # Yes, logger takes its '*args' as 'args'.
-    self._log(MESSAGE_LOG_LEVEL, msg, args, **kws)
-logging.Logger.message = message
 
 
 class GracefulExit:
@@ -160,16 +152,8 @@ def main():
     mac = args.mac
     model = args.model
     macro_text = load_macro_text(args.macro, args.macro_file)
-    verbosity = min(int(args.verbose), 4)
-    log_level = [logging.WARNING, MESSAGE_LOG_LEVEL, logging.INFO, logging.DEBUG][verbosity - 1 if verbosity > 0 else 0]
-
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s [%(levelname)-7s] %(name)-22s: %(message)s"
-    )
-    logging.getLogger("tftpy").setLevel(logging.WARNING)
-    logger = logging.getLogger(__name__)
-    logger.debug(f"Log level set to: {logging.getLevelName(log_level)}")
+    log_level = configure_logging_from_verbose(args.verbose)
+    logging.getLogger(__name__).debug("Log level set to: %s", logging.getLevelName(log_level))
 
     state = PhoneState(server=server, mac=mac, model=model)
     client = SCCPClient(state=state)

@@ -141,10 +141,10 @@ def parse_unregister_ack(client, payload):
     if status != 0:
         logger.error(f"({client.state.device_name}) [RECV] UnregisterAck Response {status_name} ({status})")
 
-    client.running = False
+    client.state.is_registered.clear()
     client.state.is_unregistered.set()
+    client.running = False
 
-    # logger.info(f"[RECV] UnregisterAck status: {status_name} ({status})")
     logger.info(f"({client.state.device_name}) [RECV] UnregisterAck")
 
 

@@ -15,6 +15,7 @@ venv/
 # IDEs
 .vscode/
 .idea/
+.github/
 old/
 downloaded_configs/
 cucm/

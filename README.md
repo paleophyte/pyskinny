@@ -27,6 +27,47 @@ pyskinny includes both a SCCP Client and a grab-bag of practical scripts for pok
 
 ---
 
+## Tests
+
+Unit tests (no CallManager required):
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest -m "not integration" -v
+```
+
+### CI (GitHub Actions)
+
+| Workflow | When | Runner |
+|----------|------|--------|
+| **Tests** (`.github/workflows/test.yml`) | Every push/PR to `main` | GitHub-hosted — unit tests on Python 3.11 and 3.12 |
+| **Integration (lab CUCM)** (`.github/workflows/integration.yml`) | Manual (**Actions → Run workflow**) | **Self-hosted** machine on your lab LAN |
+
+Cloud runners cannot reach private CUCM addresses (e.g. `10.0.0.180`). For integration CI, install a [self-hosted runner](https://docs.github.com/en/actions/hosting-your-own-runners) on a host that can reach CUCM, then run the integration workflow from the GitHub UI.
+
+Integration workflow inputs default to the lab phones documented below (`222233334444` / `445` / `446`).
+
+Integration tests against a lab CUCM (registers as a configured SEP device):
+
+```bash
+# PowerShell
+$env:PYSKINNY_CUCM_SERVER = "10.0.0.180"
+$env:PYSKINNY_TEST_MAC = "222233334444"   # ext 1003; use 222233334445/46 for 1010/1011
+$env:PYSKINNY_SKIP_TFTP = "1"            # faster; set 0 to exercise TFTP
+pytest -m integration -v
+```
+
+Only one SCCP client can hold a MAC at a time — stop consoles/macros before running integration tests.
+
+Simulator tests (no CUCM):
+
+```bash
+pytest tests/test_simulator.py -v
+```
+
+---
+
+
 ## Requirements
 - Python **3.11+** (tested on 3.12)
 - macOS/Linux (Windows likely fine)
@@ -329,12 +370,36 @@ python tools/cme.py --host <cme_ip_or_hostname> --username <router_username> --p
 
 ---
 
+## Skinny CallManager simulator
+
+A minimal SCCP server that accepts any device registration and auto-assigns DNs starting at **1000** (configurable). Enough of the Skinny handshake is implemented for **pyskinny** clients to register and show a line.
+
+```bash
+# Terminal 1 — simulator (listens on TCP 2000)
+python -m examples.run_simulator -v
+
+# Terminal 2 — softphone aimed at the simulator
+python -m examples.run_cli
+phone# set server 127.0.0.1
+phone# set mac AABBCCDDEEFF
+phone# set model 7970
+phone# set auto_connect true
+phone# connect
+```
+
+Options: `--port`, `--dn-start`, `--host`, `--name`.
+
+This is not a full CUCM replacement — no call routing, TFTP, or AXL — but it is useful for lab automation and client development without a Windows CallManager VM.
+
+---
+
 ## Roadmap / TODO / Ideas
 - [ ] Add ability to answer calls (and implement auto-answer) to run_cli.py
 - [ ] Try to add better call handling to run_cli.py (or to base SCCPClient). It's currently very difficult to manage multiple calls (i.e., place a call on hold and then dial a second number)
-- [ ] CallManager simulator (lightweight CM server that phones can register to)
+- [x] CallManager simulator (lightweight CM server that phones can register to)
+- [ ] Simulator: outbound/inbound call signaling between two registered clients
 - [ ] SIP phone support
-- [ ] Console based "GUI" SCCP Client
+- [x] Console based "GUI" SCCP Client
 - [ ] Wrap into a small **package** (`pip install pyskinny`)
 - [ ] Optional TUI/mini web UI for screenshots + actions
 

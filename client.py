@@ -81,12 +81,12 @@ class SCCPClient:
         self._send_register()
 
     def stop(self):
-        self._send_unregister()
-        self.state.is_unregistered.wait(timeout=10)
-
-        if not self.state.is_registered.is_set():
-            self.logger.error(f"({self.state.device_name}) Phone failed to unregister in time. Terminating thread.")
-            return
+        if self.sock:
+            self._send_unregister()
+            if not self.state.is_unregistered.wait(timeout=10):
+                self.logger.warning(
+                    f"({self.state.device_name}) UnregisterAck not received within timeout"
+                )
 
         # signal loops to exit
         self.running = False

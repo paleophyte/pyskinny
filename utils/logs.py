@@ -1,6 +1,9 @@
 import logging
 
 
+MESSAGE_LOG_LEVEL = logging.WARNING - 5
+
+
 def addLoggingLevel(levelName, levelNum, methodName=None):
     """
     Comprehensively adds a new logging level to the `logging` module and the
@@ -49,3 +52,33 @@ def addLoggingLevel(levelName, levelNum, methodName=None):
     setattr(logging, levelName, levelNum)
     setattr(logging.getLoggerClass(), methodName, logForLevel)
     setattr(logging, methodName, logToRoot)
+
+
+def ensure_message_log_level():
+    """Register the custom MESSAGE level once per process."""
+    try:
+        addLoggingLevel("MESSAGE", MESSAGE_LOG_LEVEL, methodName="message")
+    except AttributeError:
+        pass
+
+
+def log_level_from_verbose(verbose: int) -> int:
+    verbosity = min(int(verbose), 4)
+    levels = [logging.WARNING, MESSAGE_LOG_LEVEL, logging.INFO, logging.DEBUG]
+    return levels[verbosity - 1 if verbosity > 0 else 0]
+
+
+def configure_logging_from_verbose(
+    verbose: int,
+    *,
+    fmt: str | None = None,
+    tftpy_level: int = logging.WARNING,
+) -> int:
+    """Configure root logging from -v / -vv / -vvv / -vvvv style counts."""
+    ensure_message_log_level()
+    log_level = log_level_from_verbose(verbose)
+    if fmt is None:
+        fmt = "%(asctime)s [%(levelname)-7s] %(name)-22s: %(message)s"
+    logging.basicConfig(level=log_level, format=fmt, force=True)
+    logging.getLogger("tftpy").setLevel(tftpy_level)
+    return log_level

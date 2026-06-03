@@ -10,7 +10,8 @@ from utils.client import write_json_to_file
 
 
 class ConsoleApp:
-    def __init__(self):
+    def __init__(self, *, skip_tftp: bool = False):
+        self.skip_tftp = skip_tftp
         self.client = None
         self.line = 1
         self.stop_event = threading.Event()
@@ -311,6 +312,7 @@ class ConsoleApp:
     def run(self, stdscr, args):
         state = build_state_from_args(args)
         self.client = SCCPClient(state)
+        self.client.get_tftp_config = not self.skip_tftp
 
         curses.curs_set(0)
         stdscr.nodelay(True)

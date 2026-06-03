@@ -1,7 +1,7 @@
 from ui.cli import CLI, CLIPhone, load_cli_spec
 from ui.cli_handlers import FUNCTIONS as CLI_FUNCS
 from utils.client import write_json_to_file
-from utils.logs import addLoggingLevel
+from utils.logs import ensure_message_log_level, log_level_from_verbose, MESSAGE_LOG_LEVEL
 import logging
 import os, sys, threading
 import argparse
@@ -33,12 +33,7 @@ def ptk_immediate_logs():
         _PTK_IMMEDIATE.active = prev
 
 
-MESSAGE_LOG_LEVEL = logging.WARNING - 5
-addLoggingLevel('MESSAGE', MESSAGE_LOG_LEVEL)
-def message(self, msg, *args, **kws):
-    # Yes, logger takes its '*args' as 'args'.
-    self._log(MESSAGE_LOG_LEVEL, msg, args, **kws)
-logging.Logger.message = message
+ensure_message_log_level()
 
 
 def run_cli_repl(shell):
@@ -294,9 +289,9 @@ def main():
     args = parser.parse_args()
 
     # logging setup
-    verbosity = min(int(args.verbose), 4)
-    log_level = [logging.WARNING, MESSAGE_LOG_LEVEL, logging.INFO, logging.DEBUG][verbosity - 1 if verbosity > 0 else 0]
-    logging.basicConfig(level=log_level, format="%(asctime)s [%(levelname)-7s] %(name)-22s: %(message)s")
+    ensure_message_log_level()
+    log_level = log_level_from_verbose(args.verbose)
+    logging.basicConfig(level=log_level, format="%(asctime)s [%(levelname)-7s] %(name)-22s: %(message)s", force=True)
 
     # ---- replace basicConfig with explicit handlers ----
     root = logging.getLogger()
