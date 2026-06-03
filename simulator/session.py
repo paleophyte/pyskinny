@@ -256,7 +256,7 @@ class SkinnySession:
         ref = call.call_ref
         if self._legacy_phone:
             packets = self._legacy_outbound_packets(line, ref)
-            tone = payloads.TONE_DIAL_OUTSIDE
+            tone = payloads.TONE_DIAL
             legacy_tone = True
         else:
             tone = payloads.TONE_DIAL
@@ -281,15 +281,16 @@ class SkinnySession:
         self.send_many(packets)
 
     def _legacy_outbound_packets(self, line: int, ref: int) -> list[bytes]:
-        """7912 / CM 3.x: shorter StartTone body and ActivateCallPlane-first ordering."""
-        tone = payloads.TONE_DIAL_OUTSIDE
+        """7912 sequence matched to CUCM cm_cap.pcapng (New Call with dial tone)."""
         return [
-            payloads.activate_call_plane(line),
-            payloads.call_state(payloads.CALL_STATE_PROCEED, line, ref),
+            payloads.set_ringer(1, 1, line=0, call_ref=0),
             payloads.set_speaker_mode(1),
-            payloads.start_tone(tone, line, ref, legacy=True),
+            payloads.set_lamp(stimulus=9, instance=line, lamp_mode=2),
+            payloads.call_state(payloads.CALL_STATE_OFFHOOK, line, ref),
             payloads.select_soft_keys(line, ref, softkey_set_index=4),
             payloads.display_prompt_status("", line, ref),
+            payloads.activate_call_plane(line),
+            payloads.start_tone(payloads.TONE_DIAL, line, ref, legacy=False, direction=0),
         ]
 
     def _on_keypad(self, payload: bytes) -> bool:

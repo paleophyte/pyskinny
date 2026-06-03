@@ -27,8 +27,8 @@ SK_RESUME = 10
 SK_ANSWER = 11
 
 # Cisco tone IDs used by pyskinny client
-TONE_DIAL = 33
-TONE_DIAL_OUTSIDE = 0x20  # DialTone — preferred on 7912/7905
+TONE_DIAL = 33  # InsideDialTone (0x21) — CUCM uses this for 7912 New Call
+TONE_DIAL_OUTSIDE = 0x20  # DialTone
 TONE_RING = 36
 TONE_HOLD = 58
 TONE_REMOTE_HOLD = 59
@@ -119,6 +119,30 @@ def set_speaker_mode(mode: int = 1) -> bytes:
     return pack_message(0x0088, struct.pack("<I", mode))
 
 
+def set_ringer(
+    ring_mode: int = 1,
+    ring_duration: int = 1,
+    line: int = 0,
+    call_ref: int = 0,
+) -> bytes:
+    from simulator.protocol import pack_message
+
+    return pack_message(0x0085, struct.pack("<IIII", ring_mode, ring_duration, line, call_ref))
+
+
+def set_lamp(stimulus: int = 9, instance: int = 1, lamp_mode: int = 2) -> bytes:
+    """Line lamp on (stimulus 9 = Line, lamp_mode 2 = on)."""
+    from simulator.protocol import pack_message
+
+    return pack_message(0x0086, struct.pack("<III", stimulus, instance, lamp_mode))
+
+
+def clear_prompt_status(line: int = 1, call_ref: int = 0) -> bytes:
+    from simulator.protocol import pack_message
+
+    return pack_message(0x0113, struct.pack("<II", line, call_ref))
+
+
 def call_state(
     state: int,
     line: int = 1,
@@ -127,7 +151,7 @@ def call_state(
     from simulator.protocol import pack_message
 
     body = struct.pack("<III", state, line, call_ref)
-    body += struct.pack("<III", 0, 0, 0)
+    body += struct.pack("<III", 0, 4, 0)
     return pack_message(0x0111, body)
 
 
