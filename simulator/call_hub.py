@@ -53,6 +53,7 @@ class CallHub:
         self._by_dn: dict[str, SkinnySession] = {}
         self._calls: dict[int, SimCall] = {}
         self._next_call_ref = 16777216
+        self._legacy_next_call_ref = 1
         self.auto_answer_devices: set[str] = set()
 
     def register_session(self, session: SkinnySession) -> None:
@@ -89,17 +90,31 @@ class CallHub:
     def should_auto_answer(self, session: SkinnySession) -> bool:
         return "*" in self.auto_answer_devices or session.device_name in self.auto_answer_devices
 
-    def _alloc_call_ref(self) -> int:
+    def _alloc_call_ref(self, *, legacy: bool = False) -> int:
+        if legacy:
+            ref = self._legacy_next_call_ref
+            self._legacy_next_call_ref += 1
+            return ref
         ref = self._next_call_ref
         self._next_call_ref += 1
         return ref
 
-    def begin_outbound(self, caller: SkinnySession) -> SimCall:
+    def begin_outbound(
+        self,
+        caller: SkinnySession,
+        *,
+        line: int = 1,
+        call_ref_hint: int | None = None,
+    ) -> SimCall:
         with self._lock:
             if caller.active_call is not None:
                 raise RuntimeError(f"{caller.device_name} already in a call")
-            call_ref = self._alloc_call_ref()
-            call = SimCall(call_ref=call_ref, caller=caller, state="dialing")
+            legacy = caller._legacy_phone
+            if call_ref_hint is not None and call_ref_hint > 0:
+                call_ref = call_ref_hint
+            else:
+                call_ref = self._alloc_call_ref(legacy=legacy)
+            call = SimCall(call_ref=call_ref, caller=caller, state="dialing", line=line)
             self._calls[call_ref] = call
             caller.active_call = call
             return call

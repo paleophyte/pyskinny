@@ -86,7 +86,7 @@ def softkey_template_res() -> bytes:
     return pack_message(0x0108, body)
 
 
-def softkey_set_res() -> bytes:
+def softkey_set_res(*, legacy: bool = False) -> bytes:
     from simulator.protocol import pack_message
 
     # template_index, info_index (see messages/generic.py)
@@ -98,16 +98,25 @@ def softkey_set_res() -> bytes:
         4: [(9, 309)],                      # Off Hook — EndCall
         8: [(9, 309)],                      # Ring Out — EndCall
     }
-    num_sets = 15
-    positions = 16
-    body = struct.pack("<III", 0, num_sets, positions)
+    # total_softkeyset_count = key slots per set (12 on 7912, 16 on newer phones).
+    # Each set is always 48 bytes on the wire (16 + 32), per messages/capabilities.py.
+    key_slots = 12 if legacy else 16
+    num_sets = 9 if legacy else 15
+    body = struct.pack("<III", 0, num_sets, key_slots)
     for idx in range(num_sets):
         pairs = set_defs.get(idx, [])
-        tpl = [p[0] for p in pairs] + [0] * (positions - len(pairs))
+        tpl = [p[0] for p in pairs] + [0] * (16 - len(pairs))
         info = b"".join(struct.pack("<H", p[1]) for p in pairs)
-        info += b"\x00\x00" * (positions - len(pairs))
-        body += bytes(tpl[:positions]) + info[: positions * 2]
+        info += b"\x00\x00" * (16 - len(pairs))
+        body += bytes(tpl[:16]) + info[:32]
     return pack_message(0x0109, body)
+
+
+def set_speaker_mode(mode: int = 1) -> bytes:
+    """Speaker on (1) — some 79xx need this before dial tone."""
+    from simulator.protocol import pack_message
+
+    return pack_message(0x0088, struct.pack("<I", mode))
 
 
 def call_state(

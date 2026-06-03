@@ -512,7 +512,13 @@ python -m utils.phone_remote keys 1001
 python -m utils.phone_remote interactive
 ```
 
-On register, the simulator log should show `legacy` for a 7912 (`type=0x7537`). New Call should log `outbound dial ... tone=32 (0x20)` (DialTone, 4-byte StartTone payload).
+On register, the simulator log should show `legacy` for a 7912 (`type=0x7537`). New Call should log `outbound dial ... tone=32 (0x20) legacy=True` (4-byte StartTone + SetSpeakerMode).
+
+Automated capture + HTTP New Call (set `PHONE_PASS`):
+
+```powershell
+python -m examples.lab_capture_newcall --host 10.102.10.209 --iface 2
+```
 
 Wireshark on the sim host:
 

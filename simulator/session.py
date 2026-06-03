@@ -124,7 +124,7 @@ class SkinnySession:
             self.send(payloads.softkey_template_res())
             return True
         if msg_id == MSG_SOFTKEY_SET_REQ:
-            self.send(payloads.softkey_set_res())
+            self.send(payloads.softkey_set_res(legacy=self._legacy_phone))
             return True
         if msg_id == MSG_CONFIG_STAT_REQ:
             self.send(
@@ -232,7 +232,7 @@ class SkinnySession:
             call_ref,
         )
         if softkey_id == payloads.SK_NEWCALL:
-            self._start_outbound()
+            self._start_outbound(line=line or 1, call_ref_hint=call_ref)
         elif softkey_id == payloads.SK_ANSWER:
             self.hub.answer(self)
         elif softkey_id == payloads.SK_HOLD:
@@ -243,34 +243,54 @@ class SkinnySession:
             self.hub.end_call(source=self)
         return True
 
-    def _start_outbound(self) -> None:
+    def _start_outbound(self, *, line: int = 1, call_ref_hint: int = 0) -> None:
         if self.active_call is not None:
             return
         try:
-            call = self.hub.begin_outbound(self)
+            call = self.hub.begin_outbound(
+                self, line=line, call_ref_hint=call_ref_hint or None
+            )
         except RuntimeError:
             return
         line = call.line
         ref = call.call_ref
-        tone = payloads.TONE_DIAL_OUTSIDE if self._legacy_phone else payloads.TONE_DIAL
-        packets = [
-            payloads.call_state(payloads.CALL_STATE_OFFHOOK, line, ref),
-            payloads.activate_call_plane(line),
-            payloads.call_state(payloads.CALL_STATE_PROCEED, line, ref),
-            payloads.stop_tone(line, ref),
-            payloads.start_tone(tone, line, ref, legacy=False, direction=2),
-            payloads.select_soft_keys(line, ref, softkey_set_index=4),
-            payloads.display_prompt_status("", line, ref),
-        ]
+        if self._legacy_phone:
+            packets = self._legacy_outbound_packets(line, ref)
+            tone = payloads.TONE_DIAL_OUTSIDE
+            legacy_tone = True
+        else:
+            tone = payloads.TONE_DIAL
+            legacy_tone = False
+            packets = [
+                payloads.call_state(payloads.CALL_STATE_OFFHOOK, line, ref),
+                payloads.activate_call_plane(line),
+                payloads.call_state(payloads.CALL_STATE_PROCEED, line, ref),
+                payloads.stop_tone(line, ref),
+                payloads.start_tone(tone, line, ref, legacy=False, direction=2),
+                payloads.select_soft_keys(line, ref, softkey_set_index=4),
+                payloads.display_prompt_status("", line, ref),
+            ]
         logger.info(
-            "(%s) outbound dial ref=%s tone=%s (0x%x) legacy_phone=%s",
+            "(%s) outbound dial ref=%s tone=%s (0x%x) legacy=%s",
             self.device_name,
             ref,
             tone,
             tone,
-            self._legacy_phone,
+            legacy_tone,
         )
         self.send_many(packets)
+
+    def _legacy_outbound_packets(self, line: int, ref: int) -> list[bytes]:
+        """7912 / CM 3.x: shorter StartTone body and ActivateCallPlane-first ordering."""
+        tone = payloads.TONE_DIAL_OUTSIDE
+        return [
+            payloads.activate_call_plane(line),
+            payloads.call_state(payloads.CALL_STATE_PROCEED, line, ref),
+            payloads.set_speaker_mode(1),
+            payloads.start_tone(tone, line, ref, legacy=True),
+            payloads.select_soft_keys(line, ref, softkey_set_index=4),
+            payloads.display_prompt_status("", line, ref),
+        ]
 
     def _on_keypad(self, payload: bytes) -> bool:
         if len(payload) < 4:
