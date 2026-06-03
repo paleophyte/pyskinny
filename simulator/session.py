@@ -38,7 +38,7 @@ MSG_OFF_HOOK = 0x0006
 MSG_ON_HOOK = 0x0007
 MSG_KEYPAD = 0x0003
 MSG_SOFTKEY = 0x0026
-MSG_OPEN_RX_ACK = 0x0034
+MSG_OPEN_RX_ACK = 0x0022
 
 
 class SkinnySession:
@@ -180,6 +180,11 @@ class SkinnySession:
         if msg_id == MSG_SOFTKEY:
             return self._on_softkey(payload)
         if msg_id == MSG_OPEN_RX_ACK:
+            logger.debug(
+                "(%s) OpenReceiveChannelAck (%d bytes)",
+                self.device_name,
+                len(payload),
+            )
             self.hub.on_media_ack(self, payload)
             return True
 
