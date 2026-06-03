@@ -10,11 +10,12 @@ from datetime import datetime, timezone
 
 
 class PhoneState:
-    def __init__(self, server=None, mac=None, device_name=None, model=None, port=2000):
+    def __init__(self, server=None, mac=None, device_name=None, model=None, port=2000, tftp_port=69):
         # Basics for registration
         self.server = server
         self.source_port = 5001
         self.port = port
+        self.tftp_port = tftp_port
         if mac is not None:
             self.mac_address = normalize_mac_address(mac)
             self.device_name = "SEP" + self.mac_address

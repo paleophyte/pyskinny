@@ -7,11 +7,11 @@ logger = logging.getLogger(__name__)
 TFTP_TIMEOUT = 10
 
 
-def get_device_config_via_tftp(tftp_server=None, device_name=None):
+def get_device_config_via_tftp(tftp_server=None, device_name=None, port: int = 69):
     if not tftp_server or not device_name:
         return
 
-    client = tftpy.TftpClient(tftp_server, 69)
+    client = tftpy.TftpClient(tftp_server, int(port))
     filenames = [f"{device_name}.cnf.xml", "XMLDefault.cnf.xml"]
     output_dir = os.path.join(os.getcwd(), "downloaded_configs")
     os.makedirs(output_dir, exist_ok=True)

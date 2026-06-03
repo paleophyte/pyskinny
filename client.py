@@ -75,7 +75,11 @@ class SCCPClient:
 
     def start(self):
         if self.get_tftp_config:
-            cfg = get_device_config_via_tftp(tftp_server=self.state.server, device_name=self.state.device_name)
+            get_device_config_via_tftp(
+                tftp_server=self.state.server,
+                device_name=self.state.device_name,
+                port=getattr(self.state, "tftp_port", 69),
+            )
 
         self.connect()
         self._send_register()

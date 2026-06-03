@@ -8,6 +8,7 @@ import socket
 from simulator import payloads
 from simulator.protocol import parse_register_req, read_message
 from simulator.registry import DeviceRegistry
+from simulator.tftp_service import TftpConfigService
 
 logger = logging.getLogger(__name__)
 
@@ -35,11 +36,13 @@ class SkinnySession:
         addr: tuple,
         registry: DeviceRegistry,
         server_name: str,
+        tftp: TftpConfigService | None = None,
     ):
         self.conn = conn
         self.addr = addr
         self.registry = registry
         self.server_name = server_name
+        self.tftp = tftp
         self.device_name = ""
         self.directory_number = ""
         self._registered = False
@@ -143,6 +146,8 @@ class SkinnySession:
         info = parse_register_req(payload)
         self.device_name = info.device_name
         self.directory_number = self.registry.assign(self.device_name)
+        if self.tftp:
+            self.tftp.write_device_config(self.device_name, self.directory_number)
         logger.info(
             "Register %s from %s -> DN %s (type=0x%x, ip=%s)",
             self.device_name,

@@ -387,9 +387,34 @@ phone# set auto_connect true
 phone# connect
 ```
 
-Options: `--port`, `--dn-start`, `--host`, `--name`.
+Options: `--port`, `--dn-start`, `--host`, `--name`, `--no-tftp`, `--tftp-port`, `--tftp-root`, `--advertise-host`, `--provision MAC`.
 
-This is not a full CUCM replacement — no call routing, TFTP, or AXL — but it is useful for lab automation and client development without a Windows CallManager VM.
+### TFTP configs
+
+The simulator runs an embedded **TFTP** server (via `tftpy`) and serves:
+
+| File | Purpose |
+|------|---------|
+| `XMLDefault.cnf.xml` | Fallback — points phones at the simulator's Skinny port |
+| `SEP<MAC>.cnf.xml` | Per-device file with auto-assigned DN (created on first TFTP or Skinny register) |
+
+**Port 69** is the Cisco default but usually requires **Administrator** (Windows) or **root** (Linux). For local testing without elevation:
+
+```bash
+python -m examples.run_simulator --tftp-port 6969 -v
+```
+
+Hardware phones normally only use port 69 unless you use DHCP option 150 with a custom setup. For **pyskinny** clients, set the TFTP port on `PhoneState` (`tftp_port=6969`) or extend your CLI to match.
+
+Pre-provision a MAC before a physical phone boots (TFTP happens before Skinny TCP):
+
+```bash
+python -m examples.run_simulator --provision 222233334444 --provision 222233334445
+```
+
+Use `--advertise-host` when binding `0.0.0.0` so phone XML contains the lab IP phones can reach (not `0.0.0.0`).
+
+This is not a full CUCM replacement — no call routing or AXL — but it is useful for lab automation and client development without a Windows CallManager VM.
 
 ---
 
