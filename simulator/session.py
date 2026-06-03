@@ -117,13 +117,15 @@ class SkinnySession:
             self.send(payloads.unregister_ack(0))
             return False
         if not self.device_name:
+            if msg_id in (MSG_ALARM, MSG_LINE_STAT_REQ, MSG_SPEED_DIAL_STAT_REQ):
+                return True
             logger.debug("Ignoring msg 0x%04X before registration from %s", msg_id, self.addr)
             return True
 
         if msg_id == MSG_CAPABILITIES_RES:
             return True
         if msg_id == MSG_BUTTON_TEMPLATE_REQ:
-            self.send(payloads.button_template_res())
+            self.send(payloads.button_template_res(legacy=self._legacy_phone))
             return True
         if msg_id == MSG_SOFTKEY_TEMPLATE_REQ:
             self.send(payloads.softkey_template_res(legacy=self._legacy_phone))
@@ -214,8 +216,8 @@ class SkinnySession:
     def _finish_registration(self) -> None:
         self.send(payloads.time_date_res())
         if self._legacy_phone:
-            self.send(payloads.line_stat_res(1, self.directory_number))
             self.send(payloads.legacy_display_prompt_ready())
+            self.send(payloads.legacy_select_softkeys_idle())
         else:
             self.send(payloads.display_prompt_status("Ready"))
             self.send(payloads.select_soft_keys(softkey_set_index=0))

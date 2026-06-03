@@ -58,8 +58,23 @@ def capabilities_req() -> bytes:
     return pack_message(0x009B, b"")
 
 
-def button_template_res() -> bytes:
-    """One Line button (instance 1)."""
+def normalize_skinny_packet(packet: bytes) -> bytes:
+    """Fix data_length field when a captured blob length does not match the header."""
+    if len(packet) < 12:
+        return packet
+    dl, ver, mid = struct.unpack("<III", packet[:12])
+    body = packet[12:]
+    expected = 4 + len(body)
+    if dl == expected:
+        return packet
+    return struct.pack("<III", expected, ver, mid) + body
+
+
+def button_template_res(*, legacy: bool = False) -> bytes:
+    if legacy:
+        from simulator.cucm_legacy_assets import LEGACY_BUTTON_TEMPLATE_RES
+
+        return normalize_skinny_packet(LEGACY_BUTTON_TEMPLATE_RES)
     from simulator.protocol import pack_message
 
     # type 9 = Line, instance 1 -> (9 << 8) | 1
@@ -72,7 +87,7 @@ def softkey_template_res(*, legacy: bool = False) -> bytes:
     if legacy:
         from simulator.cucm_legacy_assets import LEGACY_SOFTKEY_TEMPLATE_RES
 
-        return LEGACY_SOFTKEY_TEMPLATE_RES
+        return normalize_skinny_packet(LEGACY_SOFTKEY_TEMPLATE_RES)
     from simulator.protocol import pack_message
 
     keys = [
@@ -94,7 +109,7 @@ def softkey_set_res(*, legacy: bool = False) -> bytes:
     if legacy:
         from simulator.cucm_legacy_assets import LEGACY_SOFTKEY_SET_RES
 
-        return LEGACY_SOFTKEY_SET_RES
+        return normalize_skinny_packet(LEGACY_SOFTKEY_SET_RES)
     from simulator.protocol import pack_message
 
     # template_index, info_index (see messages/generic.py)
@@ -351,32 +366,32 @@ def display_prompt_status(prompt: str = "Ready", line_instance: int = 1, call_re
 def legacy_select_softkeys_idle() -> bytes:
     from simulator.cucm_legacy_assets import LEGACY_SELECT_SOFTKEYS_IDLE
 
-    return LEGACY_SELECT_SOFTKEYS_IDLE
+    return normalize_skinny_packet(LEGACY_SELECT_SOFTKEYS_IDLE)
 
 
 def legacy_display_prompt_idle() -> bytes:
     from simulator.cucm_legacy_assets import LEGACY_DISPLAY_PROMPT_IDLE
 
-    return LEGACY_DISPLAY_PROMPT_IDLE
+    return normalize_skinny_packet(LEGACY_DISPLAY_PROMPT_IDLE)
 
 
 def legacy_display_prompt_ready() -> bytes:
     from simulator.cucm_legacy_assets import LEGACY_DISPLAY_PROMPT_READY
 
-    return LEGACY_DISPLAY_PROMPT_READY
+    return normalize_skinny_packet(LEGACY_DISPLAY_PROMPT_READY)
 
 
 def legacy_select_softkeys_onhook() -> bytes:
     from simulator.cucm_legacy_assets import LEGACY_SELECT_SOFTKEYS_ONHOOK
 
-    return LEGACY_SELECT_SOFTKEYS_ONHOOK
+    return normalize_skinny_packet(LEGACY_SELECT_SOFTKEYS_ONHOOK)
 
 
 def feature_stat_res(*, legacy: bool = False) -> bytes:
     if legacy:
         from simulator.cucm_legacy_assets import LEGACY_FEATURE_STAT_RES
 
-        return LEGACY_FEATURE_STAT_RES
+        return normalize_skinny_packet(LEGACY_FEATURE_STAT_RES)
     from simulator.protocol import pack_message
 
     body = struct.pack("<II", 1, 0)

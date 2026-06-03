@@ -175,6 +175,9 @@ class TftpConfigService:
         text = self._materialize_sep_config(device_name, dn)
         path = self._root / f"{device_name}.cnf.xml"
         with self._lock:
+            if path.is_file() and path.read_text(encoding="utf-8", errors="replace") == text:
+                logger.debug("TFTP config %s unchanged (DN %s)", path.name, dn)
+                return path
             path.write_text(text, encoding="utf-8")
         logger.info("TFTP config %s -> DN %s (CM %s)", path.name, dn, self.cm_host)
         return path

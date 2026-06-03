@@ -21,6 +21,7 @@ def frame_bytes(n: int) -> bytes:
 def main() -> None:
     assets = {
         "LEGACY_SOFTKEY_TEMPLATE_RES": frame_bytes(40),
+        "LEGACY_BUTTON_TEMPLATE_RES": frame_bytes(38),
         "LEGACY_SOFTKEY_SET_RES": frame_bytes(43),
         "LEGACY_SELECT_SOFTKEYS_IDLE": frame_bytes(45),
         "LEGACY_DISPLAY_PROMPT_IDLE": frame_bytes(46),
