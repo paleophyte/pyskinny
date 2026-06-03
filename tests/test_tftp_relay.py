@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 import tftpy
 
-from simulator.tftp_relay import TftpRelay
+from simulator.tftp_relay import TftpRelay, _TransferSession
 from simulator.tftp_service import FALLBACK_TFTP_PORT
 
 
@@ -87,4 +87,36 @@ def test_relay_fetches_file(tftp_backend_port: int):
             pytest.fail(f"TFTP error: {packet!r}")
 
     assert data.replace(b"\r\n", b"\n") == b"relay-ok\n"
+    relay.stop()
+
+
+def test_relay_drops_session_on_recv_error():
+    """ConnectionResetError on a session socket must not kill the relay loop."""
+
+    class BrokenSock:
+        def recvfrom(self, *_args, **_kwargs):
+            raise ConnectionResetError("simulated reset")
+
+        def close(self):
+            pass
+
+    relay = TftpRelay(
+        listen_host="127.0.0.1",
+        listen_port=18770,
+        backend_host="127.0.0.1",
+        backend_port=1,
+    )
+    relay._running = True
+    good = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    good.bind(("127.0.0.1", 0))
+    bad = BrokenSock()
+    session = _TransferSession(
+        client_addr=("10.0.0.1", 9999),
+        upstream_sock=bad,
+        client_sock=good,
+    )
+    relay._sessions[session.client_addr] = session
+    relay._on_session_socket(bad)
+    assert session.client_addr not in relay._sessions
+    good.close()
     relay.stop()

@@ -110,20 +110,21 @@ class TftpRelay:
 
     def _loop(self) -> None:
         while self._running:
-            self._expire_idle()
-            readers = [self._control]
-            for session in self._sessions.values():
-                readers.append(session.upstream_sock)
-                readers.append(session.client_sock)
             try:
+                self._expire_idle()
+                readers = [self._control]
+                for session in list(self._sessions.values()):
+                    readers.append(session.upstream_sock)
+                    readers.append(session.client_sock)
                 readable, _, _ = select.select(readers, [], [], POLL_SEC)
-            except OSError:
-                break
-            for sock in readable:
-                if sock is self._control:
-                    self._on_control()
-                else:
-                    self._on_session_socket(sock)
+                for sock in readable:
+                    if sock is self._control:
+                        self._on_control()
+                    else:
+                        self._on_session_socket(sock)
+            except OSError as exc:
+                logger.warning("Relay loop I/O error (continuing): %s", exc)
+                time.sleep(POLL_SEC)
 
     def _expire_idle(self) -> None:
         now = time.monotonic()
@@ -137,7 +138,11 @@ class TftpRelay:
             self._sessions.pop(key).close()
 
     def _on_control(self) -> None:
-        packet, client_addr = self._control.recvfrom(65535)
+        try:
+            packet, client_addr = self._control.recvfrom(65535)
+        except OSError as exc:
+            logger.debug("Control recv failed: %s", exc)
+            return
         op = _opcode(packet)
         if op not in (TFTP_OPCODE_RRQ, TFTP_OPCODE_WRQ):
             logger.debug("Ignoring non-RRQ/WRQ on control port from %s op=%s", client_addr, op)
@@ -178,20 +183,35 @@ class TftpRelay:
         session = self._session_for_socket(sock)
         if not session:
             return
-        packet, addr = sock.recvfrom(65535)
+        client_key = session.client_addr
+        try:
+            packet, addr = sock.recvfrom(65535)
+        except OSError as exc:
+            logger.warning(
+                "Session %s recv on %s failed (%s); dropping session",
+                client_key,
+                "upstream" if sock is session.upstream_sock else "client",
+                exc,
+            )
+            self._end_session(client_key)
+            return
         session.touch()
-        if sock is session.upstream_sock:
-            if session.backend_addr is None:
-                session.backend_addr = addr
-                logger.debug("Backend TID %s for client %s", addr, session.client_addr)
-            session.client_sock.sendto(packet, session.client_addr)
-            if _opcode(packet) == TFTP_OPCODE_ERROR or _is_terminal_data(packet):
-                self._end_session(session.client_addr)
-        else:
-            dest = session.backend_addr or self.backend_addr
-            session.upstream_sock.sendto(packet, dest)
-            if _opcode(packet) == TFTP_OPCODE_ERROR:
-                self._end_session(session.client_addr)
+        try:
+            if sock is session.upstream_sock:
+                if session.backend_addr is None:
+                    session.backend_addr = addr
+                    logger.debug("Backend TID %s for client %s", addr, client_key)
+                session.client_sock.sendto(packet, client_key)
+                if _opcode(packet) == TFTP_OPCODE_ERROR or _is_terminal_data(packet):
+                    self._end_session(client_key)
+            else:
+                dest = session.backend_addr or self.backend_addr
+                session.upstream_sock.sendto(packet, dest)
+                if _opcode(packet) == TFTP_OPCODE_ERROR:
+                    self._end_session(client_key)
+        except OSError as exc:
+            logger.warning("Session %s forward failed (%s); dropping session", client_key, exc)
+            self._end_session(client_key)
 
     def _session_for_socket(self, sock: socket.socket) -> _TransferSession | None:
         for session in self._sessions.values():
@@ -242,7 +262,15 @@ def main(argv: list[str] | None = None) -> int:
         relay.start()
     except KeyboardInterrupt:
         logger.info("Stopped")
+    finally:
         relay.stop()
+        for session in list(relay._sessions.values()):
+            session.close()
+        relay._sessions.clear()
+        try:
+            relay._control.close()
+        except OSError:
+            pass
     return 0
 
 
