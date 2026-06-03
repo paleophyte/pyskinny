@@ -105,6 +105,26 @@ def _guess_image_ext(data, content_type=None):
 
 
 # ---------- button presses / actions ----------
+def _check_execute_response(response: requests.Response) -> None:
+    text = (response.text or "").strip()
+    if not text:
+        return
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return
+    for item in root.iter("ResponseItem"):
+        status_el = item.find("Status")
+        if status_el is None or not status_el.text:
+            continue
+        status = status_el.text.strip()
+        if status in ("0", "OK"):
+            continue
+        if status in ("401", "Unauthorized"):
+            raise PermissionError("HTTP 401 Unauthorized (phone rejected credentials)")
+        raise RuntimeError(f"Phone Execute error: {status}")
+
+
 def _execute(
     ip,
     execute_items,
@@ -117,6 +137,7 @@ def _execute(
 ):
     """
     execute_items: list of URLs, e.g., ["Key:Speaker", "Key:KeyPad5"] or ["Dial:1001"]
+    Returns the HTTP response (status_code, url).
     """
     body = f"""<?xml version="1.0" encoding="UTF-8"?>
 <CiscoIPPhoneExecute>
@@ -128,16 +149,8 @@ def _execute(
     r = _try_post(urls, data=body.encode("utf-8"),
                   headers={"Content-Type": "text/xml"}, auth=auth,
                   timeout=timeout, verify=verify)
-    # Successful returns are tiny XML docs with <CiscoIPPhoneResponse> or empty;
-    # surface any explicit errors:
-    try:
-        root = ET.fromstring(r.text.strip() or "<ok/>")
-        err = root.find(".//ResponseItem/Status")
-        if err is not None and err.text and err.text.strip() not in ("0","OK"):
-            raise RuntimeError(f"Phone Execute error: {err.text.strip()}")
-    except ET.ParseError:
-        pass
-    return True
+    _check_execute_response(r)
+    return r
 
 
 def press_keys(ip, sequence, auth=None, use_https=False, try_https_fallback=False, port=None, timeout=6, verify=False):

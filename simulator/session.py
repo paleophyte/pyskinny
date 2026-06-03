@@ -176,6 +176,7 @@ class SkinnySession:
             return True
 
         if msg_id == MSG_OFF_HOOK:
+            logger.info("(%s) OffHook", self.device_name)
             return self._on_off_hook()
         if msg_id == MSG_ON_HOOK:
             logger.info("(%s) OnHook — ending call", self.device_name)

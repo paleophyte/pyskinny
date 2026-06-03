@@ -167,19 +167,26 @@ class CallHub:
 
         ring_common = [
             payloads.call_state(payloads.CALL_STATE_RINGIN, call.line, call.call_ref),
-            payloads.call_info(
-                caller_name, caller_dn, callee_name, callee_dn,
-                line=call.line, call_ref=call.call_ref, call_type=1,
-            ),
         ]
         if callee._legacy_phone:
             call.callee.send_many(
-                ring_common + self._legacy_ring_in_packets(call)
+                ring_common
+                + self._legacy_ring_in_packets(call, caller_dn)
+                + [
+                    payloads.call_info(
+                        caller_name, caller_dn, callee_name, callee_dn,
+                        line=call.line, call_ref=call.call_ref, call_type=1,
+                    ),
+                ]
             )
         else:
             call.callee.send_many(
                 ring_common
                 + [
+                    payloads.call_info(
+                        caller_name, caller_dn, callee_name, callee_dn,
+                        line=call.line, call_ref=call.call_ref, call_type=1,
+                    ),
                     payloads.start_tone(payloads.TONE_RING, call.line, call.call_ref),
                     payloads.display_prompt_status("Ring In", call.line, call.call_ref),
                     payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=3),
@@ -195,14 +202,68 @@ class CallHub:
             ).start()
 
     @staticmethod
-    def _legacy_ring_in_packets(call: SimCall) -> list[bytes]:
-        """7912 ring-in sequence from cm_call_from_pyskinny_to_7912.pcapng frames 132-138."""
+    def _legacy_ring_in_packets(call: SimCall, caller_dn: str) -> list[bytes]:
+        """7912 ring-in from cm_call_from_pyskinny_to_7912.pcapng frames 132-138."""
         line, ref = call.line, call.call_ref
         return [
             payloads.select_soft_keys(line, ref, softkey_set_index=3),
-            payloads.display_prompt_status("Ring In", line, ref),
+            payloads.legacy_display_text(caller_dn, line, ref),
+            payloads.display_pri_notify(caller_dn),
             payloads.set_lamp(stimulus=9, instance=line, lamp_mode=5),
             payloads.set_ringer(2, 1, line, ref),
+        ]
+
+    @staticmethod
+    def _legacy_callee_connect_packets(
+        call: SimCall,
+        *,
+        caller_name: str,
+        caller_dn: str,
+        callee_name: str,
+        callee_dn: str,
+    ) -> list[bytes]:
+        """7912 answer/off-hook path from cm_call_from_pyskinny_to_7912.pcapng frames 141-153."""
+        line, ref = call.line, call.call_ref
+        return [
+            payloads.set_ringer(1, 1, 0, 0),
+            payloads.set_speaker_mode(1),
+            payloads.set_lamp(stimulus=9, instance=line, lamp_mode=2),
+            payloads.call_state(payloads.CALL_STATE_OFFHOOK, line, ref),
+            payloads.activate_call_plane(line),
+            payloads.set_ringer(1, 1, line, ref),
+            payloads.stop_tone(line, ref),
+            payloads.open_receive_channel(ref),
+            payloads.stop_tone(line, ref),
+            payloads.call_state(payloads.CALL_STATE_CONNECTED, line, ref),
+            payloads.select_soft_keys(line, ref, softkey_set_index=1),
+            payloads.legacy_display_text(caller_dn, line, ref),
+            payloads.call_info(
+                caller_name, caller_dn, callee_name, callee_dn,
+                line=line, call_ref=ref, call_type=1,
+            ),
+        ]
+
+    @staticmethod
+    def _modern_connect_packets(
+        call: SimCall,
+        party: SkinnySession,
+        *,
+        caller_name: str,
+        caller_dn: str,
+        callee_name: str,
+        callee_dn: str,
+    ) -> list[bytes]:
+        return [
+            payloads.stop_tone(call.line, call.call_ref),
+            payloads.call_state(payloads.CALL_STATE_CONNECTED, call.line, call.call_ref),
+            payloads.call_info(
+                caller_name, caller_dn, callee_name, callee_dn,
+                line=call.line, call_ref=call.call_ref,
+                call_type=2 if party is call.caller else 1,
+            ),
+            payloads.display_prompt_status("Connected", call.line, call.call_ref),
+            payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=1),
+            payloads.open_receive_channel(call.call_ref),
         ]
 
     def _auto_answer_after_delay(self, session: SkinnySession) -> None:
@@ -232,18 +293,27 @@ class CallHub:
         logger.info("Connect call ref=%s %s <-> %s", call.call_ref, caller_dn, callee_dn)
 
         for party in (caller, callee):
-            party.send_many([
-                payloads.stop_tone(call.line, call.call_ref),
-                payloads.call_state(payloads.CALL_STATE_CONNECTED, call.line, call.call_ref),
-                payloads.call_info(
-                    caller_name, caller_dn, callee_name, callee_dn,
-                    line=call.line, call_ref=call.call_ref,
-                    call_type=2 if party is caller else 1,
-                ),
-                payloads.display_prompt_status("Connected", call.line, call.call_ref),
-                payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=1),
-                payloads.open_receive_channel(call.call_ref),
-            ])
+            if party._legacy_phone and party is callee:
+                party.send_many(
+                    self._legacy_callee_connect_packets(
+                        call,
+                        caller_name=caller_name,
+                        caller_dn=caller_dn,
+                        callee_name=callee_name,
+                        callee_dn=callee_dn,
+                    )
+                )
+            else:
+                party.send_many(
+                    self._modern_connect_packets(
+                        call,
+                        party,
+                        caller_name=caller_name,
+                        caller_dn=caller_dn,
+                        callee_name=callee_name,
+                        callee_dn=callee_dn,
+                    )
+                )
             party.awaiting_media_ack = True
 
     def hold(self, session: SkinnySession) -> None:
@@ -326,7 +396,12 @@ class CallHub:
         call = session.active_call
         if not call or call.state != "connected":
             return
-        if len(payload) < 20:
+        if len(payload) < 12:
+            logger.debug(
+                "(%s) OpenReceiveChannelAck too short (%d bytes)",
+                session.device_name,
+                len(payload),
+            )
             return
 
         port = struct.unpack("<I", payload[8:12])[0]

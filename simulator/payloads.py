@@ -363,6 +363,43 @@ def display_prompt_status(prompt: str = "Ready", line_instance: int = 1, call_re
     return pack_message(0x0112, body)
 
 
+def legacy_display_text(
+    text: str,
+    line_instance: int = 1,
+    call_reference: int = 0,
+    *,
+    tagged: bool = True,
+) -> bytes:
+    """7912 display lines use 0x8017-tagged text during calls (CUCM capture)."""
+    from simulator.protocol import pack_message
+
+    if tagged:
+        raw = b"\x80\x17" + text.encode("ascii", errors="replace")[:30]
+    else:
+        raw = text.encode("ascii", errors="replace")
+    raw = raw[:32].ljust(32, b"\x00")
+    body = struct.pack("<I", 0) + raw + struct.pack("<II", line_instance, call_reference)
+    return pack_message(0x0112, body)
+
+
+def display_pri_notify(
+    text: str,
+    *,
+    timeout: int = 10,
+    priority: int = 5,
+    tagged: bool = True,
+) -> bytes:
+    from simulator.protocol import pack_message
+
+    if tagged:
+        raw = b"\x80\x17" + text.encode("ascii", errors="replace")[:30]
+    else:
+        raw = text.encode("ascii", errors="replace")
+    raw = raw[:32].ljust(32, b"\x00")
+    body = struct.pack("<II", timeout, priority) + raw
+    return pack_message(0x0120, body)
+
+
 def legacy_select_softkeys_idle() -> bytes:
     from simulator.cucm_legacy_assets import LEGACY_SELECT_SOFTKEYS_IDLE
 

@@ -231,6 +231,11 @@ def _add_auth_flags(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="If HTTP fails, also try HTTPS (legacy behavior)",
     )
+    p.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="Suppress success messages",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -277,19 +282,34 @@ def main(argv: list[str] | None = None) -> int:
         port=args.port,
     )
 
+    def _ok(label: str) -> None:
+        if not args.quiet:
+            auth_note = ""
+            if auth_user and not args.password:
+                auth_note = " (no password set)"
+            elif not auth_user:
+                auth_note = " (no auth — phone may allow unauthenticated CGI)"
+            print(f"OK: {label} on {ip}{auth_note}")
+
     if args.command == "screenshot":
         out = screenshot(ip, args.output, user=auth_user, password=auth_pass, **http)
-        print(out or args.output)
+        if not args.quiet:
+            print(out or args.output)
     elif args.command == "softkey":
         phone_softkey(ip, args.index, _auth(auth_user, auth_pass), **http)
+        _ok(f"Soft{args.index}")
     elif args.command == "newcall":
         new_call(ip, user=auth_user, password=auth_pass, **http)
+        _ok(f"New Call (Soft{DEFAULT_NEW_CALL_SOFTKEY})")
     elif args.command == "keys":
         press_keys(ip, args.digits, _auth(auth_user, auth_pass), **http)
+        _ok(f"keys {args.digits}")
     elif args.command == "dial":
         phone_dial(ip, args.number, _auth(auth_user, auth_pass), **http)
+        _ok(f"dial {args.number}")
     elif args.command == "press":
         press_url(ip, args.url, user=auth_user, password=auth_pass, **http)
+        _ok(args.url)
     elif args.command == "nav":
         nav(ip, args.direction, _auth(auth_user, auth_pass), **http)
     elif args.command == "hook":
