@@ -165,16 +165,26 @@ class CallHub:
             payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=8),
         ])
 
-        call.callee.send_many([
+        ring_common = [
             payloads.call_state(payloads.CALL_STATE_RINGIN, call.line, call.call_ref),
             payloads.call_info(
                 caller_name, caller_dn, callee_name, callee_dn,
                 line=call.line, call_ref=call.call_ref, call_type=1,
             ),
-            payloads.start_tone(payloads.TONE_RING, call.line, call.call_ref),
-            payloads.display_prompt_status("Ring In", call.line, call.call_ref),
-            payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=3),
-        ])
+        ]
+        if callee._legacy_phone:
+            call.callee.send_many(
+                ring_common + self._legacy_ring_in_packets(call)
+            )
+        else:
+            call.callee.send_many(
+                ring_common
+                + [
+                    payloads.start_tone(payloads.TONE_RING, call.line, call.call_ref),
+                    payloads.display_prompt_status("Ring In", call.line, call.call_ref),
+                    payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=3),
+                ]
+            )
 
         if self.should_auto_answer(callee):
             threading.Thread(
@@ -183,6 +193,17 @@ class CallHub:
                 name=f"auto-answer-{callee.device_name}",
                 daemon=True,
             ).start()
+
+    @staticmethod
+    def _legacy_ring_in_packets(call: SimCall) -> list[bytes]:
+        """7912 ring-in sequence from cm_call_from_pyskinny_to_7912.pcapng frames 132-138."""
+        line, ref = call.line, call.call_ref
+        return [
+            payloads.select_soft_keys(line, ref, softkey_set_index=3),
+            payloads.display_prompt_status("Ring In", line, ref),
+            payloads.set_lamp(stimulus=9, instance=line, lamp_mode=5),
+            payloads.set_ringer(2, 1, line, ref),
+        ]
 
     def _auto_answer_after_delay(self, session: SkinnySession) -> None:
         import time

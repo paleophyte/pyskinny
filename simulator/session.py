@@ -107,6 +107,8 @@ class SkinnySession:
                 self.source_port = struct.unpack("<I", payload[:4])[0]
             return True
         if msg_id == MSG_KEEPALIVE:
+            if self._registered:
+                logger.info("(%s) KeepAliveReq", self.device_name)
             self.send(payloads.keepalive_ack())
             return True
         if msg_id == MSG_ALARM:
@@ -166,7 +168,11 @@ class SkinnySession:
                 self._lines = max(1, self._read_u32(payload))
             return True
         if msg_id == MSG_TIME_DATE_REQ:
-            self._finish_registration()
+            if not self._registered:
+                self._finish_registration()
+            else:
+                logger.debug("(%s) TimeDateReq", self.device_name)
+                self.send(payloads.time_date_res())
             return True
 
         if msg_id == MSG_OFF_HOOK:
