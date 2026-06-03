@@ -68,7 +68,11 @@ def button_template_res() -> bytes:
     return pack_message(0x0097, body)
 
 
-def softkey_template_res() -> bytes:
+def softkey_template_res(*, legacy: bool = False) -> bytes:
+    if legacy:
+        from simulator.cucm_legacy_assets import LEGACY_SOFTKEY_TEMPLATE_RES
+
+        return LEGACY_SOFTKEY_TEMPLATE_RES
     from simulator.protocol import pack_message
 
     keys = [
@@ -87,6 +91,10 @@ def softkey_template_res() -> bytes:
 
 
 def softkey_set_res(*, legacy: bool = False) -> bytes:
+    if legacy:
+        from simulator.cucm_legacy_assets import LEGACY_SOFTKEY_SET_RES
+
+        return LEGACY_SOFTKEY_SET_RES
     from simulator.protocol import pack_message
 
     # template_index, info_index (see messages/generic.py)
@@ -338,6 +346,42 @@ def display_prompt_status(prompt: str = "Ready", line_instance: int = 1, call_re
     text = prompt.encode("ascii", errors="replace")[:31].ljust(32, b"\x00")
     body = struct.pack("<I", 0) + text + struct.pack("<II", line_instance, call_reference)
     return pack_message(0x0112, body)
+
+
+def legacy_select_softkeys_idle() -> bytes:
+    from simulator.cucm_legacy_assets import LEGACY_SELECT_SOFTKEYS_IDLE
+
+    return LEGACY_SELECT_SOFTKEYS_IDLE
+
+
+def legacy_display_prompt_idle() -> bytes:
+    from simulator.cucm_legacy_assets import LEGACY_DISPLAY_PROMPT_IDLE
+
+    return LEGACY_DISPLAY_PROMPT_IDLE
+
+
+def legacy_display_prompt_ready() -> bytes:
+    from simulator.cucm_legacy_assets import LEGACY_DISPLAY_PROMPT_READY
+
+    return LEGACY_DISPLAY_PROMPT_READY
+
+
+def legacy_select_softkeys_onhook() -> bytes:
+    from simulator.cucm_legacy_assets import LEGACY_SELECT_SOFTKEYS_ONHOOK
+
+    return LEGACY_SELECT_SOFTKEYS_ONHOOK
+
+
+def feature_stat_res(*, legacy: bool = False) -> bytes:
+    if legacy:
+        from simulator.cucm_legacy_assets import LEGACY_FEATURE_STAT_RES
+
+        return LEGACY_FEATURE_STAT_RES
+    from simulator.protocol import pack_message
+
+    body = struct.pack("<II", 1, 0)
+    body += b"\x00" * 44
+    return pack_message(0x011F, body)
 
 
 def select_soft_keys(

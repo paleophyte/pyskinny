@@ -361,7 +361,7 @@ class CallHub:
                         payloads.set_lamp(stimulus=9, instance=call.line, lamp_mode=1),
                         payloads.clear_prompt_status(call.line, call.call_ref),
                         payloads.call_state(payloads.CALL_STATE_ONHOOK, call.line, call.call_ref),
-                        payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=0),
+                        payloads.legacy_select_softkeys_onhook(),
                         payloads.time_date_res(),
                         payloads.set_speaker_mode(0),
                     ])

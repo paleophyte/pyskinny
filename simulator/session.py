@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 MSG_REGISTER_REQ = 0x0001
 MSG_IP_PORT = 0x0002
 MSG_KEEPALIVE = 0x0000
+MSG_ALARM = 0x0020
 MSG_CAPABILITIES_RES = 0x0010
 MSG_BUTTON_TEMPLATE_REQ = 0x000E
 MSG_SOFTKEY_TEMPLATE_REQ = 0x0028
@@ -29,6 +30,7 @@ MSG_CONFIG_STAT_REQ = 0x000C
 MSG_LINE_STAT_REQ = 0x000B
 MSG_SPEED_DIAL_STAT_REQ = 0x000A
 MSG_FORWARD_STAT_REQ = 0x0009
+MSG_FEATURE_STAT_REQ = 0x0034
 MSG_REGISTER_AVAILABLE_LINES = 0x002D
 MSG_TIME_DATE_REQ = 0x000D
 MSG_UNREGISTER_REQ = 0x0027
@@ -107,6 +109,9 @@ class SkinnySession:
         if msg_id == MSG_KEEPALIVE:
             self.send(payloads.keepalive_ack())
             return True
+        if msg_id == MSG_ALARM:
+            logger.debug("Alarm from %s (pre-register=%s)", self.addr, not self.device_name)
+            return True
         if msg_id == MSG_UNREGISTER_REQ:
             self.hub.end_call(source=self)
             self.send(payloads.unregister_ack(0))
@@ -121,10 +126,13 @@ class SkinnySession:
             self.send(payloads.button_template_res())
             return True
         if msg_id == MSG_SOFTKEY_TEMPLATE_REQ:
-            self.send(payloads.softkey_template_res())
+            self.send(payloads.softkey_template_res(legacy=self._legacy_phone))
             return True
         if msg_id == MSG_SOFTKEY_SET_REQ:
             self.send(payloads.softkey_set_res(legacy=self._legacy_phone))
+            if self._legacy_phone:
+                self.send(payloads.legacy_select_softkeys_idle())
+                self.send(payloads.legacy_display_prompt_idle())
             return True
         if msg_id == MSG_CONFIG_STAT_REQ:
             self.send(
@@ -139,6 +147,9 @@ class SkinnySession:
         if msg_id == MSG_LINE_STAT_REQ:
             line = self._read_u32(payload, default=1)
             self.send(payloads.line_stat_res(line, self.directory_number))
+            return True
+        if msg_id == MSG_FEATURE_STAT_REQ:
+            self.send(payloads.feature_stat_res(legacy=self._legacy_phone))
             return True
         if msg_id == MSG_FORWARD_STAT_REQ:
             line = self._read_u32(payload, default=1)
@@ -202,8 +213,12 @@ class SkinnySession:
 
     def _finish_registration(self) -> None:
         self.send(payloads.time_date_res())
-        self.send(payloads.display_prompt_status("Ready"))
-        self.send(payloads.select_soft_keys(softkey_set_index=0))
+        if self._legacy_phone:
+            self.send(payloads.line_stat_res(1, self.directory_number))
+            self.send(payloads.legacy_display_prompt_ready())
+        else:
+            self.send(payloads.display_prompt_status("Ready"))
+            self.send(payloads.select_soft_keys(softkey_set_index=0))
         self._registered = True
         self.hub.register_session(self)
         logger.info(
