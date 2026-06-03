@@ -1,0 +1,89 @@
+<device  xsi:type="axl:XIPPhone" ctiid="1991901315" uuid="{0E520B22-CFE8-4699-97C2-0BDB535A331C}">
+<devicePool  uuid="{1B1B9EB6-7803-11D3-BDF0-00108302EAD1}">
+<name>Default</name>
+<dateTimeSetting  uuid="{9EC4850A-7748-11D3-BDF0-00108302EAD1}">
+<name>CMLocal</name>
+<dateTemplate>M/D/Y</dateTemplate>
+<timeZone>Greenwich Standard Time</timeZone>
+</dateTimeSetting>
+<callManagerGroup>
+<members>
+<member  priority="0">
+<callManager>
+<ports>
+<analogAccessPort>2002</analogAccessPort>
+<digitalAccessPort>2001</digitalAccessPort>
+<ethernetPhonePort>2000</ethernetPhonePort>
+<mgcpPorts>
+<listen>2427</listen>
+<keepAlive>2428</keepAlive>
+</mgcpPorts>
+</ports>
+<processNodeName>10.102.172.11</processNodeName>
+</callManager>
+</member>
+</members>
+</callManagerGroup>
+<srstInfo  uuid="{CD241E11-4A58-4D3D-9661-F06C912A18A3}">
+<name>Disable</name>
+<srstOption>Disable</srstOption>
+<userModifiable>false</userModifiable>
+<ipAddr1></ipAddr1>
+<port1>2000</port1>
+<ipAddr2></ipAddr2>
+<port2>2000</port2>
+<ipAddr3></ipAddr3>
+<port3>2000</port3>
+<isSecure>false</isSecure>
+</srstInfo>
+<mlppDomainId>-1</mlppDomainId>
+<mlppIndicationStatus>Default</mlppIndicationStatus>
+<preemption>Default</preemption>
+<connectionMonitorDuration>120</connectionMonitorDuration>
+</devicePool>
+<loadInformation>CP7912060000SCCP050124A</loadInformation>
+<vendorConfig>
+ <disableSpeaker>false</disableSpeaker><garp>0</garp><settingsAccess>1</settingsAccess><webAccess>0</webAccess></vendorConfig>
+<versionStamp>{5D6C2E9C-3077-4C73-B011-ECC6085B143C}</versionStamp>
+<userLocale>
+<name>English_United_States</name>
+<uid>1</uid>
+<langCode>en</langCode>
+<version>4.1(3)</version>
+<winCharSet>iso-8859-1</winCharSet>
+</userLocale>
+<networkLocale>United_States</networkLocale>
+<networkLocaleInfo>
+<name>United_States</name>
+<uid>64</uid>
+<version>4.1(3)</version>
+</networkLocaleInfo>
+<idleTimeout>0</idleTimeout>
+<authenticationURL>http://10.102.172.11:8088/CCMCIP/authenticate.asp</authenticationURL>
+<directoryURL>http://10.102.172.11:8088/CCMCIP/xmldirectory.asp</directoryURL>
+<idleURL>http://10.102.172.11:8088/CCMCIP/idle.asp</idleURL>
+<informationURL>http://10.102.172.11:8088/CCMCIP/GetTelecasterHelpText.asp</informationURL>
+<messagesURL>http://10.102.172.11:8088/CCMCIP/messages.asp</messagesURL>
+<proxyServerURL>http://10.102.172.11:8088/CCMCIP/proxy.asp</proxyServerURL>
+<servicesURL>http://10.102.172.11:8088/CCMCIP/getservicesmenu.asp</servicesURL>
+<dscpForCm2Dvce>96</dscpForCm2Dvce>
+<dscpForSCCPPhoneConfig>96</dscpForSCCPPhoneConfig>
+<dscpForSCCPPhoneServices>0</dscpForSCCPPhoneServices>
+<capfAuthMode>1</capfAuthMode>
+<capfList>
+<capf>
+<phonePort>3804</phonePort>
+<processNodeName>CUCM4</processNodeName>
+</capf>
+</capfList>
+
+  <lines>
+    <line button="1">
+      <featureID>9</featureID>
+      <featureLabel>1000</featureLabel>
+      <name>1000</name>
+      <displayName>1000</displayName>
+      <e164Mask>1000</e164Mask>
+    </line>
+  </lines>
+</device>

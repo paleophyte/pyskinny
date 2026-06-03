@@ -417,9 +417,19 @@ python -m examples.run_simulator -v --advertise-host 10.102.172.11 --tftp-root D
 
 On CUCM, files usually live under the publisher’s TFTP path (OS Admin → **Software Upgrades** → TFTP file management, or the `tftp` folder on the server). Copy `Ringlist.xml`, `United_States\`, and any `.raw`/`.pcm` ring files the phone requests.
 
-**Port 69** is the Cisco default but usually requires **Administrator** (Windows) or **root** (Linux). If port 69 cannot be bound at startup, the simulator **automatically falls back to port 6969** and logs a warning.
+**Port 69** is the Cisco default but usually requires **Administrator** (Windows) or **root** (Linux). Run the simulator on **6969** (no admin) and use the **TFTP relay** when a hardware phone must talk to port 69:
 
-For **pyskinny** clients when fallback occurs, set `tftp_port=6969` on `PhoneState`. Hardware phones normally only use port 69 unless you use DHCP option 150 with a custom setup or port redirect.
+```powershell
+# Terminal A — elevated (Administrator)
+python -m simulator.tftp_relay -v
+
+# Terminal B — normal user
+python -m examples.run_simulator -vv --advertise-host 10.102.172.11 --tftp-port 6969 --tftp-root simulator/tftp_assets
+```
+
+The relay listens on `0.0.0.0:69` and forwards each TFTP transfer to `127.0.0.1:6969`. Phones keep using **CallManager / TFTP address** `10.102.172.11` (port 69).
+
+If you start the simulator without the relay and port 69 is unavailable, it **automatically falls back to 6969** and logs a warning. **pyskinny** clients can use `tftp_port=6969` on `PhoneState` in that case.
 
 Force a specific port (no fallback): `--tftp-port 6969`.
 
@@ -481,6 +491,34 @@ python -m examples.run_simulator -v --auto-answer-all
 RTP media is negotiated after connect (`OpenReceiveChannel` / `StartMediaTransmission`); audio path is basic but call state should reach **Connected**.
 
 This is not a full CUCM replacement — no call routing or AXL — but it is useful for lab automation and client development without a Windows CallManager VM.
+
+### Lab troubleshooting (7912 + simulator)
+
+Use two channels in parallel:
+
+| Tool | Role |
+|------|------|
+| `examples/run_simulator` | SCCP/TFTP (register, dial tone, call state) |
+| `python -m utils.phone_remote` | HTTP CGI — press softkeys / digits on the physical LCD |
+
+```bash
+set PHONE_IP=10.102.10.209
+set PHONE_USER=Administrator
+set PHONE_PASS=your_phone_web_password
+
+python -m utils.phone_remote screenshot -o screen.png
+python -m utils.phone_remote newcall          # Soft2 by default (PHONE_NEW_CALL_SOFTKEY)
+python -m utils.phone_remote keys 1001
+python -m utils.phone_remote interactive
+```
+
+On register, the simulator log should show `legacy` for a 7912 (`type=0x7537`). New Call should log `outbound dial ... tone=32 (0x20)` (DialTone, 4-byte StartTone payload).
+
+Wireshark on the sim host:
+
+```text
+"c:\Program Files\Wireshark\tshark.exe" -i 2 -f "host <phone-ip> and tcp port 2000"
+```
 
 ---
 

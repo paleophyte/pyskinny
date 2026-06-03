@@ -1,10 +1,16 @@
 import socket
 import time
+from pathlib import Path
 
 import pytest
 import tftpy
 
-from simulator.tftp_config import build_sep_config, build_xml_default
+from simulator.tftp_config import (
+    build_sep_config,
+    build_xml_default,
+    is_cucm_sep_config,
+    patch_sep_config_for_sim,
+)
 from simulator.tftp_service import (
     FALLBACK_TFTP_PORT,
     PRIVILEGED_TFTP_PORT,
@@ -97,3 +103,30 @@ def test_get_device_config_via_tftp_helper(tftp_service):
     text = get_device_config_via_tftp("127.0.0.1", "SEP111122223333", port=port)
     assert text
     assert "processNodeName" in text
+
+
+def test_patch_cucm_sep_preserves_load_and_adds_line():
+    cucm = Path(__file__).resolve().parents[1] / "simulator/tftp_assets/SEP001380AD9E5F.cnf.xml"
+    if not cucm.is_file():
+        pytest.skip("lab SEP sample not in tree")
+    raw = cucm.read_text(encoding="utf-8")
+    assert is_cucm_sep_config(raw)
+    patched = patch_sep_config_for_sim(
+        raw,
+        cm_host="10.102.172.11",
+        directory_number="1000",
+        skinny_port=2000,
+        cip_port=8088,
+    )
+    assert "CP7912060000SCCP050124A" in patched
+    assert "<processNodeName>10.102.172.11</processNodeName>" in patched
+    assert "http://10.102.172.11:8088/CCMCIP/authenticate.asp" in patched
+    assert "<lines>" in patched
+    assert "<name>1000</name>" in patched
+
+
+def test_softkey_set_res_has_fifteen_sets():
+    from simulator.payloads import softkey_set_res
+
+    pkt = softkey_set_res()
+    assert len(pkt) >= 8 + 12 + 15 * 48

@@ -1,10 +1,13 @@
 """
 Run a minimal Skinny CallManager simulator with optional TFTP.
 
-  # Terminal 1 — TFTP tries port 69, auto-falls back to 6969 without admin
-  python -m examples.run_simulator -v
+  # Simulator TFTP on 6969 (no admin needed)
+  python -m examples.run_simulator -v --tftp-port 6969
 
-  # Terminal 2
+  # Optional admin terminal — phones still hit port 69
+  python -m simulator.tftp_relay
+
+  # Client
   python -m examples.run_cli
   phone# set server 127.0.0.1
   phone# set mac AABBCCDDEEFF

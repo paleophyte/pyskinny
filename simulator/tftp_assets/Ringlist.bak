@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Minimal ring list: phones use built-in chirps if PCM files are absent. -->
+<CiscoIPPhoneRinglist>
+</CiscoIPPhoneRinglist>

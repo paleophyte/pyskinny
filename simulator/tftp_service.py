@@ -16,6 +16,8 @@ from simulator.tftp_config import (
     _sep_name_from_filename,
     build_sep_config,
     build_xml_default,
+    is_cucm_sep_config,
+    patch_sep_config_for_sim,
 )
 from utils.client import get_local_ip
 
@@ -57,12 +59,14 @@ def resolve_tftp_listen_port(host: str, requested: int) -> int:
     logger.warning(
         "Cannot bind TFTP port %s on %s (usually requires Administrator/root). "
         "Falling back to port %s. "
-        "pyskinny clients must use tftp_port=%s; hardware phones expect port %s.",
+        "Hardware phones still need port %s: run "
+        "'python -m simulator.tftp_relay' as Administrator in another terminal. "
+        "pyskinny clients can use tftp_port=%s.",
         PRIVILEGED_TFTP_PORT,
         bind_host,
         FALLBACK_TFTP_PORT,
-        FALLBACK_TFTP_PORT,
         PRIVILEGED_TFTP_PORT,
+        FALLBACK_TFTP_PORT,
     )
     return FALLBACK_TFTP_PORT
 
@@ -92,10 +96,12 @@ class TftpConfigService:
         root: str | Path | None = None,
         listen_host: str = "0.0.0.0",
         listen_port: int = PRIVILEGED_TFTP_PORT,
+        cip_port: int = 8088,
     ):
         self.registry = registry
         self.cm_host = cm_host
         self.skinny_port = skinny_port
+        self.cip_port = cip_port
         self.listen_host = listen_host
         self.requested_port = listen_port
         self.listen_port = resolve_tftp_listen_port(listen_host, listen_port)
@@ -144,15 +150,29 @@ class TftpConfigService:
         )
         logger.debug("Wrote %s", path)
 
-    def write_device_config(self, device_name: str, directory_number: str | None = None) -> Path:
-        """Write or refresh SEP<mac>.cnf.xml on disk."""
-        dn = directory_number or self.registry.assign(device_name)
-        text = build_sep_config(
+    def _materialize_sep_config(self, device_name: str, directory_number: str) -> str:
+        path = self._root / f"{device_name}.cnf.xml"
+        if path.is_file():
+            existing = path.read_text(encoding="utf-8", errors="replace")
+            if is_cucm_sep_config(existing):
+                return patch_sep_config_for_sim(
+                    existing,
+                    cm_host=self.cm_host,
+                    directory_number=directory_number,
+                    skinny_port=self.skinny_port,
+                    cip_port=self.cip_port,
+                )
+        return build_sep_config(
             device_name,
-            dn,
+            directory_number,
             self.cm_host,
             skinny_port=self.skinny_port,
         )
+
+    def write_device_config(self, device_name: str, directory_number: str | None = None) -> Path:
+        """Write or refresh SEP<mac>.cnf.xml on disk."""
+        dn = directory_number or self.registry.assign(device_name)
+        text = self._materialize_sep_config(device_name, dn)
         path = self._root / f"{device_name}.cnf.xml"
         with self._lock:
             path.write_text(text, encoding="utf-8")
@@ -165,12 +185,7 @@ class TftpConfigService:
         sep = _sep_name_from_filename(name)
         if sep:
             dn = self.registry.assign(sep)
-            text = build_sep_config(
-                sep,
-                dn,
-                self.cm_host,
-                skinny_port=self.skinny_port,
-            )
+            text = self._materialize_sep_config(sep, dn)
         elif name == "XMLDefault.cnf.xml":
             text = build_xml_default(self.cm_host, self.skinny_port)
         else:

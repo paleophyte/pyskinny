@@ -5,6 +5,71 @@ from __future__ import annotations
 import re
 from xml.sax.saxutils import escape
 
+_CUCM_URL_PATHS = {
+    "authenticationURL": "authenticate.asp",
+    "directoryURL": "xmldirectory.asp",
+    "informationURL": "GetTelecasterHelpText.asp",
+    "servicesURL": "getservicesmenu.asp",
+    "idleURL": "idle.asp",
+    "messagesURL": "messages.asp",
+    "proxyServerURL": "proxy.asp",
+}
+
+
+def is_cucm_sep_config(text: str) -> bool:
+    """Heuristic: full CUCM export vs our minimal generator output."""
+    return "<loadInformation>" in text and "<devicePool" in text
+
+
+def patch_sep_config_for_sim(
+    text: str,
+    *,
+    cm_host: str,
+    directory_number: str,
+    skinny_port: int = 2000,
+    cip_port: int = 8088,
+) -> str:
+    """Point CM + CCMCIP URLs at the simulator; ensure a line block exists."""
+    host = cm_host
+    cip_base = f"http://{host}:{cip_port}/CCMCIP"
+
+    text = re.sub(
+        r"<processNodeName>[^<]*</processNodeName>",
+        f"<processNodeName>{escape(host)}</processNodeName>",
+        text,
+        count=1,
+    )
+    text = re.sub(
+        r"<ethernetPhonePort>\d+</ethernetPhonePort>",
+        f"<ethernetPhonePort>{skinny_port}</ethernetPhonePort>",
+        text,
+        count=1,
+    )
+    for tag, path in _CUCM_URL_PATHS.items():
+        text = re.sub(
+            rf"<{tag}>[^<]*</{tag}>",
+            f"<{tag}>{cip_base}/{path}</{tag}>",
+            text,
+            count=1,
+        )
+
+    if "<lines>" not in text and "</device>" in text:
+        dn = escape(directory_number)
+        lines = f"""
+  <lines>
+    <line button="1">
+      <featureID>9</featureID>
+      <featureLabel>{dn}</featureLabel>
+      <name>{dn}</name>
+      <displayName>{dn}</displayName>
+      <e164Mask>{dn}</e164Mask>
+    </line>
+  </lines>
+"""
+        text = text.replace("</device>", lines + "</device>", 1)
+
+    return text
+
 
 def _sep_name_from_filename(filename: str) -> str | None:
     base = filename.replace("\\", "/").split("/")[-1]

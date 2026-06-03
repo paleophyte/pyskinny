@@ -61,6 +61,8 @@ class SkinnySession:
         self.source_port = 5001
         self._registered = False
         self._lines = 1
+        self.device_type = 0
+        self._legacy_phone = False
         self.active_call: SimCall | None = None
         self.awaiting_media_ack = False
 
@@ -157,6 +159,7 @@ class SkinnySession:
         if msg_id == MSG_OFF_HOOK:
             return self._on_off_hook()
         if msg_id == MSG_ON_HOOK:
+            logger.info("(%s) OnHook — ending call", self.device_name)
             self.hub.end_call(source=self)
             return True
         if msg_id == MSG_KEYPAD:
@@ -179,16 +182,19 @@ class SkinnySession:
         info = parse_register_req(payload)
         self.device_name = info.device_name
         self.station_ip = info.station_ip
+        self.device_type = info.device_type
+        self._legacy_phone = payloads.is_legacy_skinny_phone(info.device_type)
         self.directory_number = self.registry.assign(self.device_name)
         if self.tftp:
             self.tftp.write_device_config(self.device_name, self.directory_number)
         logger.info(
-            "Register %s from %s -> DN %s (type=0x%x, ip=%s)",
+            "Register %s from %s -> DN %s (type=0x%x, ip=%s, %s)",
             self.device_name,
             self.addr[0],
             self.directory_number,
             info.device_type,
             info.station_ip,
+            "legacy" if self._legacy_phone else "modern",
         )
         self.send(payloads.register_ack())
         self.send(payloads.capabilities_req())
@@ -197,7 +203,7 @@ class SkinnySession:
     def _finish_registration(self) -> None:
         self.send(payloads.time_date_res())
         self.send(payloads.display_prompt_status("Ready"))
-        self.send(payloads.select_soft_keys())
+        self.send(payloads.select_soft_keys(softkey_set_index=0))
         self._registered = True
         self.hub.register_session(self)
         logger.info(
@@ -217,7 +223,14 @@ class SkinnySession:
     def _on_softkey(self, payload: bytes) -> bool:
         if len(payload) < 12:
             return True
-        softkey_id, _line, _call_ref = struct.unpack("<III", payload[:12])
+        softkey_id, line, call_ref = struct.unpack("<III", payload[:12])
+        logger.info(
+            "(%s) SoftKeyEvent id=%s line=%s ref=%s",
+            self.device_name,
+            softkey_id,
+            line,
+            call_ref,
+        )
         if softkey_id == payloads.SK_NEWCALL:
             self._start_outbound()
         elif softkey_id == payloads.SK_ANSWER:
@@ -237,13 +250,27 @@ class SkinnySession:
             call = self.hub.begin_outbound(self)
         except RuntimeError:
             return
-        self.send_many([
-            payloads.activate_call_plane(call.line),
-            payloads.call_state(payloads.CALL_STATE_PROCEED, call.line, call.call_ref),
-            payloads.start_tone(payloads.TONE_DIAL, call.line, call.call_ref),
-            payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=4),
-            payloads.display_prompt_status("", call.line, call.call_ref),
-        ])
+        line = call.line
+        ref = call.call_ref
+        tone = payloads.TONE_DIAL_OUTSIDE if self._legacy_phone else payloads.TONE_DIAL
+        packets = [
+            payloads.call_state(payloads.CALL_STATE_OFFHOOK, line, ref),
+            payloads.activate_call_plane(line),
+            payloads.call_state(payloads.CALL_STATE_PROCEED, line, ref),
+            payloads.stop_tone(line, ref),
+            payloads.start_tone(tone, line, ref, legacy=False, direction=2),
+            payloads.select_soft_keys(line, ref, softkey_set_index=4),
+            payloads.display_prompt_status("", line, ref),
+        ]
+        logger.info(
+            "(%s) outbound dial ref=%s tone=%s (0x%x) legacy_phone=%s",
+            self.device_name,
+            ref,
+            tone,
+            tone,
+            self._legacy_phone,
+        )
+        self.send_many(packets)
 
     def _on_keypad(self, payload: bytes) -> bool:
         if len(payload) < 4:

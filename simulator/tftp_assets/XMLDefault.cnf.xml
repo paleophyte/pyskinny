@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<device>
+  <deviceProtocol>SCCP</deviceProtocol>
+  <fullConfig>true</fullConfig>
+  <devicePool>
+    <callManagerGroup>
+      <members>
+        <member priority="0">
+          <callManager>
+            <ports>
+              <ethernetPhonePort>2000</ethernetPhonePort>
+            </ports>
+            <processNodeName>10.102.172.11</processNodeName>
+          </callManager>
+        </member>
+      </members>
+    </callManagerGroup>
+  </devicePool>
+  <loadInformation></loadInformation>
+  <versionStamp>{Jan 01 2002 00:00:00}</versionStamp>
+  <userLocale>
+    <name>English_United_States</name>
+    <langCode>en</langCode>
+  </userLocale>
+  <networkLocale>United_States</networkLocale>
+</device>

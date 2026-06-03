@@ -10,6 +10,7 @@ from simulator.call_hub import CallHub
 from simulator.registry import DeviceRegistry
 from simulator.session import SkinnySession
 from simulator.tftp_service import TftpConfigService, resolve_advertise_host
+from simulator.cip_http import start_cip_http
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class SkinnySimulator:
         advertise_host: str | None = None,
         tftp_root: str | None = None,
         auto_answer: list[str] | None = None,
+        cip_port: int = 8088,
     ):
         self.host = host
         self.port = port
@@ -41,6 +43,8 @@ class SkinnySimulator:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self.tftp: TftpConfigService | None = None
+        self._cip_http = None
+        self.cip_port = cip_port
 
         if tftp:
             cm_host = resolve_advertise_host(host, advertise_host)
@@ -51,6 +55,7 @@ class SkinnySimulator:
                 root=tftp_root,
                 listen_host=tftp_host or host,
                 listen_port=tftp_port,
+                cip_port=cip_port,
             )
 
     @property
@@ -80,6 +85,7 @@ class SkinnySimulator:
 
     def start(self, background: bool = True) -> None:
         if self.tftp:
+            self._cip_http = start_cip_http(self.host, self.cip_port)
             self.tftp.start(background=True)
             logger.info(
                 "TFTP serving from %s (XML + dynamic SEP*.cnf.xml) on %s:%s",
@@ -101,11 +107,17 @@ class SkinnySimulator:
         )
         if self.tftp:
             logger.info(
-                "Phones should use CallManager / TFTP address %s (Skinny port %s, TFTP port %s%s)",
+                "Phones should use CallManager / TFTP address %s (Skinny port %s, TFTP port %s%s, CCMCIP http://%s:%s)",
                 self.tftp.cm_host,
                 self.port,
                 self.tftp.listen_port,
-                " — fell back from 69" if self.tftp.fell_back_from_privileged else "",
+                (
+                    " — fell back from 69; run: python -m simulator.tftp_relay (as admin)"
+                    if self.tftp.fell_back_from_privileged
+                    else ""
+                ),
+                self.tftp.cm_host,
+                self.cip_port,
             )
         if background:
             self._thread = threading.Thread(target=self._serve_forever, name="skinny-sim", daemon=True)

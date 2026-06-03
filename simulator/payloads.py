@@ -16,6 +16,7 @@ CALL_STATE_RINGOUT = 3
 CALL_STATE_RINGIN = 4
 CALL_STATE_CONNECTED = 5
 CALL_STATE_HOLD = 8
+CALL_STATE_OFFHOOK = 1
 CALL_STATE_PROCEED = 12
 
 # Skinny soft-key events (match messages/generic.py)
@@ -27,9 +28,17 @@ SK_ANSWER = 11
 
 # Cisco tone IDs used by pyskinny client
 TONE_DIAL = 33
+TONE_DIAL_OUTSIDE = 0x20  # DialTone — preferred on 7912/7905
 TONE_RING = 36
 TONE_HOLD = 58
 TONE_REMOTE_HOLD = 59
+
+# device_type from RegisterReq (see messages/generic.py DEVICE_TYPE_MAP)
+DEVICE_TYPE_7912 = 30007
+
+
+def is_legacy_skinny_phone(device_type: int) -> bool:
+    return device_type == DEVICE_TYPE_7912
 
 
 def register_ack(keepalive: int = 30) -> bytes:
@@ -80,12 +89,24 @@ def softkey_template_res() -> bytes:
 def softkey_set_res() -> bytes:
     from simulator.protocol import pack_message
 
-    skti = bytes([2, 1, 11, 3, 10, 9] + [0] * 10)
-    skii = b""
-    for info_id in (302, 301, 311, 303, 309):
-        skii += struct.pack("<H", info_id)
-    skii = skii.ljust(32, b"\x00")
-    body = struct.pack("<III", 0, 1, 1) + skti + skii
+    # template_index, info_index (see messages/generic.py)
+    set_defs: dict[int, list[tuple[int, int]]] = {
+        0: [(2, 302), (1, 301)],           # On Hook — NewCall, Redial
+        1: [(3, 303), (9, 309), (4, 304)],  # Connected — Hold, EndCall, Transfer
+        2: [(10, 310), (9, 309)],           # On Hold — Resume, EndCall
+        3: [(11, 311)],                     # Ring In — Answer
+        4: [(9, 309)],                      # Off Hook — EndCall
+        8: [(9, 309)],                      # Ring Out — EndCall
+    }
+    num_sets = 15
+    positions = 16
+    body = struct.pack("<III", 0, num_sets, positions)
+    for idx in range(num_sets):
+        pairs = set_defs.get(idx, [])
+        tpl = [p[0] for p in pairs] + [0] * (positions - len(pairs))
+        info = b"".join(struct.pack("<H", p[1]) for p in pairs)
+        info += b"\x00\x00" * (positions - len(pairs))
+        body += bytes(tpl[:positions]) + info[: positions * 2]
     return pack_message(0x0109, body)
 
 
@@ -121,10 +142,20 @@ def call_info(
     return pack_message(0x008F, body)
 
 
-def start_tone(tone: int, line: int = 1, call_ref: int = 0) -> bytes:
+def start_tone(
+    tone: int,
+    line: int = 1,
+    call_ref: int = 0,
+    *,
+    legacy: bool = False,
+    direction: int = 2,
+) -> bytes:
     from simulator.protocol import pack_message
 
-    return pack_message(0x0082, struct.pack("<IIII", tone, 0, line, call_ref))
+    if legacy:
+        # CM 3.x / 7912: often only tone index in payload
+        return pack_message(0x0082, struct.pack("<I", tone))
+    return pack_message(0x0082, struct.pack("<IIII", tone, direction, line, call_ref))
 
 
 def stop_tone(line: int = 1, call_ref: int = 0) -> bytes:
@@ -213,7 +244,9 @@ def line_stat_res(line_number: int, directory_number: str) -> bytes:
     from simulator.protocol import pack_message
 
     dn = directory_number.encode("ascii", errors="replace")[:23].ljust(24, b"\x00")
-    body = struct.pack("<I", line_number) + dn
+    fqdn = directory_number.encode("ascii", errors="replace")[:39].ljust(40, b"\x00")
+    label = directory_number.encode("ascii", errors="replace")[:39].ljust(40, b"\x00")
+    body = struct.pack("<I", line_number) + dn + fqdn + label + struct.pack("<I", 0)
     return pack_message(0x0092, body)
 
 
