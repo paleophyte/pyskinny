@@ -110,11 +110,11 @@ class CallHub:
             if caller.active_call is not None:
                 raise RuntimeError(f"{caller.device_name} already in a call")
             legacy = caller._legacy_phone
-            if call_ref_hint is not None and call_ref_hint > 0:
+            if call_ref_hint is not None:
                 call_ref = call_ref_hint
             else:
                 call_ref = self._alloc_call_ref(legacy=legacy)
-            call = SimCall(call_ref=call_ref, caller=caller, state="dialing", line=line)
+            call = SimCall(call_ref=call_ref, caller=caller, state="dialing", line=max(1, line))
             self._calls[call_ref] = call
             caller.active_call = call
             return call

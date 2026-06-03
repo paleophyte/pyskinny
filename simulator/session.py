@@ -243,12 +243,12 @@ class SkinnySession:
             self.hub.end_call(source=self)
         return True
 
-    def _start_outbound(self, *, line: int = 1, call_ref_hint: int = 0) -> None:
+    def _start_outbound(self, *, line: int = 1, call_ref_hint: int | None = None) -> None:
         if self.active_call is not None:
             return
         try:
             call = self.hub.begin_outbound(
-                self, line=line, call_ref_hint=call_ref_hint or None
+                self, line=line, call_ref_hint=call_ref_hint
             )
         except RuntimeError:
             return

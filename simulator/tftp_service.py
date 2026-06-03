@@ -212,17 +212,29 @@ class TftpConfigService:
             self._listen()
 
     def _listen(self) -> None:
-        assert self._server is not None
-        try:
-            self._server.listen(self.listen_host, self.listen_port)
-        except OSError as exc:
-            logger.error(
-                "Cannot bind TFTP port %s on %s: %s",
-                self.listen_port,
-                self.listen_host,
-                exc,
-            )
-            raise
+        import time
+
+        while self._server is not None:
+            try:
+                self._server.listen(self.listen_host, self.listen_port)
+            except OSError as exc:
+                if self._server is None:
+                    return
+                logger.error(
+                    "TFTP server stopped on %s:%s (%s); restarting in 1s",
+                    self.listen_host,
+                    self.listen_port,
+                    exc,
+                )
+                time.sleep(1)
+                try:
+                    self._server = tftpy.TftpServer(
+                        str(self._root),
+                        dyn_file_func=self._dyn_file,
+                    )
+                except Exception as recreate_exc:
+                    logger.error("TFTP restart failed: %s", recreate_exc)
+                    return
 
     def stop(self) -> None:
         if self._server:
