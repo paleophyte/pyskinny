@@ -1,9 +1,10 @@
 """
-Control and troubleshoot Cisco 79xx phones via HTTP CGI (Execute / Screenshot).
+Lab CLI for Cisco 79xx phone control via HTTP CGI (Execute / Screenshot).
 
-Works alongside the Skinny simulator: drive the physical phone UI while the sim
-handles SCCP. Credentials are the phone web login (CUCM end-user on the device),
-not the simulator.
+This is a thin wrapper around ``tools.phone`` — the HTTP/CGI implementation lives
+there. Use this module for simulator-lab ergonomics (env vars, subcommands,
+interactive REPL, capture-hint). Use ``tools.phone`` directly if importing from
+Python code.
 
 Examples:
   set PHONE_IP=10.102.10.209
@@ -38,12 +39,27 @@ from tools.phone import (
 
 # 7912 on-hook layout varies by firmware; Soft2 is commonly "New Call"
 DEFAULT_NEW_CALL_SOFTKEY = int(os.environ.get("PHONE_NEW_CALL_SOFTKEY", "2"))
+_env_port = os.environ.get("PHONE_PORT")
+DEFAULT_PORT = int(_env_port) if _env_port else None
 
 
 def _auth(user: str | None, password: str | None) -> tuple[str, str] | None:
     if user:
         return (user, password or "")
     return None
+
+
+def _http_kwargs(
+    *,
+    use_https: bool = False,
+    try_https_fallback: bool = False,
+    port: int | None = None,
+) -> dict:
+    return {
+        "use_https": use_https,
+        "try_https_fallback": try_https_fallback,
+        "port": port,
+    }
 
 
 def _phone_ip(ip: str | None) -> str:
@@ -60,10 +76,20 @@ def press_url(
     user: str | None = None,
     password: str | None = None,
     delay: float = 0,
+    use_https: bool = False,
+    try_https_fallback: bool = False,
+    port: int | None = None,
 ) -> bool:
     """Send one CiscoIPPhoneExecute URL (e.g. Key:Soft2, Key:KeyPad5)."""
     auth = _auth(user, password)
-    _execute(ip, [url], auth)
+    _execute(
+        ip,
+        [url],
+        auth,
+        use_https=use_https,
+        try_https_fallback=try_https_fallback,
+        port=port,
+    )
     if delay:
         time.sleep(delay)
     return True
@@ -88,9 +114,19 @@ def new_call(
     softkey_index: int = DEFAULT_NEW_CALL_SOFTKEY,
     user: str | None = None,
     password: str | None = None,
+    use_https: bool = False,
+    try_https_fallback: bool = False,
+    port: int | None = None,
 ) -> None:
     """Press the softkey that maps to New Call on 7912-class phones."""
-    phone_softkey(ip, softkey_index, _auth(user, password))
+    phone_softkey(
+        ip,
+        softkey_index,
+        _auth(user, password),
+        use_https=use_https,
+        try_https_fallback=try_https_fallback,
+        port=port,
+    )
 
 
 def screenshot(
@@ -99,9 +135,19 @@ def screenshot(
     *,
     user: str | None = None,
     password: str | None = None,
+    use_https: bool = False,
+    try_https_fallback: bool = False,
+    port: int | None = None,
 ) -> str | None:
     auth = _auth(user, password)
-    _data, _ext, saved = fetch_screenshot(ip, auth=auth, save_as=path)
+    _data, _ext, saved = fetch_screenshot(
+        ip,
+        auth=auth,
+        save_as=path,
+        use_https=use_https,
+        try_https_fallback=try_https_fallback,
+        port=port,
+    )
     return saved
 
 
@@ -110,6 +156,9 @@ def interactive_loop(
     *,
     user: str | None = None,
     password: str | None = None,
+    use_https: bool = False,
+    try_https_fallback: bool = False,
+    port: int | None = None,
 ) -> None:
     """Minimal REPL for lab troubleshooting."""
     help_text = """
@@ -126,6 +175,11 @@ Commands:
   quit
 """
     print(help_text.strip())
+    http = _http_kwargs(
+        use_https=use_https,
+        try_https_fallback=try_https_fallback,
+        port=port,
+    )
     while True:
         try:
             line = input("phone> ").strip()
@@ -144,22 +198,22 @@ Commands:
                 print(help_text)
             elif cmd == "screenshot":
                 path = args[0] if args else "phone_screen.png"
-                out = screenshot(ip, path, user=user, password=password)
+                out = screenshot(ip, path, user=user, password=password, **http)
                 print(f"saved {out}")
             elif cmd == "softkey":
-                phone_softkey(ip, int(args[0]), _auth(user, password))
+                phone_softkey(ip, int(args[0]), _auth(user, password), **http)
             elif cmd == "newcall":
-                new_call(ip, user=user, password=password)
+                new_call(ip, user=user, password=password, **http)
             elif cmd == "keys":
-                press_keys(ip, args[0], _auth(user, password))
+                press_keys(ip, args[0], _auth(user, password), **http)
             elif cmd == "dial":
-                phone_dial(ip, args[0], _auth(user, password))
+                phone_dial(ip, args[0], _auth(user, password), **http)
             elif cmd == "press":
-                press_url(ip, args[0], user=user, password=password)
+                press_url(ip, args[0], user=user, password=password, **http)
             elif cmd == "nav":
-                nav(ip, args[0], _auth(user, password))
+                nav(ip, args[0], _auth(user, password), **http)
             elif cmd == "hook":
-                hardkey(ip, args[0], _auth(user, password))
+                hardkey(ip, args[0], _auth(user, password), **http)
             else:
                 print("unknown command; type help")
         except Exception as exc:
@@ -170,6 +224,13 @@ def _add_auth_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("--ip", default=os.environ.get("PHONE_IP"), help="Phone IP (or PHONE_IP)")
     p.add_argument("--user", default=os.environ.get("PHONE_USER"), help="Web username (PHONE_USER)")
     p.add_argument("--password", default=os.environ.get("PHONE_PASS"), help="Web password (PHONE_PASS)")
+    p.add_argument("--port", type=int, default=DEFAULT_PORT, help="HTTP port (or PHONE_PORT; default 80)")
+    p.add_argument("--https", action="store_true", help="Use HTTPS only (default: plain HTTP)")
+    p.add_argument(
+        "--try-https",
+        action="store_true",
+        help="If HTTP fails, also try HTTPS (legacy behavior)",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -210,26 +271,31 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     ip = _phone_ip(args.ip)
     auth_user, auth_pass = args.user, args.password
+    http = _http_kwargs(
+        use_https=args.https,
+        try_https_fallback=args.try_https,
+        port=args.port,
+    )
 
     if args.command == "screenshot":
-        out = screenshot(ip, args.output, user=auth_user, password=auth_pass)
+        out = screenshot(ip, args.output, user=auth_user, password=auth_pass, **http)
         print(out or args.output)
     elif args.command == "softkey":
-        phone_softkey(ip, args.index, _auth(auth_user, auth_pass))
+        phone_softkey(ip, args.index, _auth(auth_user, auth_pass), **http)
     elif args.command == "newcall":
-        new_call(ip, user=auth_user, password=auth_pass)
+        new_call(ip, user=auth_user, password=auth_pass, **http)
     elif args.command == "keys":
-        press_keys(ip, args.digits, _auth(auth_user, auth_pass))
+        press_keys(ip, args.digits, _auth(auth_user, auth_pass), **http)
     elif args.command == "dial":
-        phone_dial(ip, args.number, _auth(auth_user, auth_pass))
+        phone_dial(ip, args.number, _auth(auth_user, auth_pass), **http)
     elif args.command == "press":
-        press_url(ip, args.url, user=auth_user, password=auth_pass)
+        press_url(ip, args.url, user=auth_user, password=auth_pass, **http)
     elif args.command == "nav":
-        nav(ip, args.direction, _auth(auth_user, auth_pass))
+        nav(ip, args.direction, _auth(auth_user, auth_pass), **http)
     elif args.command == "hook":
-        hardkey(ip, args.name, _auth(auth_user, auth_pass))
+        hardkey(ip, args.name, _auth(auth_user, auth_pass), **http)
     elif args.command == "interactive":
-        interactive_loop(ip, user=auth_user, password=auth_pass)
+        interactive_loop(ip, user=auth_user, password=auth_pass, **http)
     elif args.command == "capture-hint":
         print(
             f"Terminal 1:\n  python -m utils.skinny_capture --host {ip} --iface {args.iface}\n\n"

@@ -7,6 +7,31 @@ from PIL import Image
 
 
 # ---------- core HTTP helpers ----------
+
+def _host_url(scheme: str, ip: str, path: str, port: int | None = None) -> str:
+    if port:
+        return f"{scheme}://{ip}:{port}{path}"
+    return f"{scheme}://{ip}{path}"
+
+
+def _request_urls(
+    ip: str,
+    path: str,
+    *,
+    use_https: bool = False,
+    try_https_fallback: bool = False,
+    port: int | None = None,
+) -> list[str]:
+    """Build CGI URLs. Default is plain HTTP only (7912 lab phones rarely speak HTTPS)."""
+    if use_https:
+        schemes = ["https"]
+    else:
+        schemes = ["http"]
+        if try_https_fallback:
+            schemes.append("https")
+    return [_host_url(scheme, ip, path, port) for scheme in schemes]
+
+
 def _try_get(urls, auth=None, timeout=6, verify=False):
     last = None
     for u in urls:
@@ -18,7 +43,7 @@ def _try_get(urls, auth=None, timeout=6, verify=False):
             return r
         except Exception as e:
             last = e
-    raise RuntimeError(f"GET failed: {last}")
+    raise RuntimeError(f"GET failed ({urls[-1] if urls else '?'}): {last}")
 
 
 def _try_post(urls, data=None, headers=None, auth=None, timeout=6, verify=False):
@@ -32,22 +57,30 @@ def _try_post(urls, data=None, headers=None, auth=None, timeout=6, verify=False)
             return r
         except Exception as e:
             last = e
-    raise RuntimeError(f"POST failed: {last}")
+    raise RuntimeError(f"POST failed ({urls[-1] if urls else '?'}): {last}")
 
 
 # ---------- screenshot ----------
-def fetch_screenshot(ip, auth=None, use_https=False, timeout=6, verify=False, save_as=None):
+def fetch_screenshot(
+    ip,
+    auth=None,
+    use_https=False,
+    try_https_fallback=False,
+    port: int | None = None,
+    timeout=6,
+    verify=False,
+    save_as=None,
+):
     """
     Returns (bytes, ext) and saves to file if save_as is given (ext appended if missing).
-    Tries HTTP first unless use_https=True.
+    Uses HTTP by default; pass use_https=True for HTTPS-only phones.
     """
-    schemes = (["https"] if use_https else ["http", "https"])
     urls = []
-    for s in schemes:
-        # Some firmwares only accept exactly /CGI/Screenshot
-        urls.append(f"{s}://{ip}/CGI/Screenshot")
-        # A few odd builds need a dummy query to bypass caches
-        urls.append(f"{s}://{ip}/CGI/Screenshot?ts={int(time.time())}")
+    for base in _request_urls(
+        ip, "/CGI/Screenshot", use_https=use_https, try_https_fallback=try_https_fallback, port=port
+    ):
+        urls.append(base)
+        urls.append(f"{base}?ts={int(time.time())}")
 
     r = _try_get(urls, auth=auth, timeout=timeout, verify=verify)
     data = r.content
@@ -72,7 +105,16 @@ def _guess_image_ext(data, content_type=None):
 
 
 # ---------- button presses / actions ----------
-def _execute(ip, execute_items, auth=None, use_https=False, timeout=6, verify=False):
+def _execute(
+    ip,
+    execute_items,
+    auth=None,
+    use_https=False,
+    try_https_fallback=False,
+    port: int | None = None,
+    timeout=6,
+    verify=False,
+):
     """
     execute_items: list of URLs, e.g., ["Key:Speaker", "Key:KeyPad5"] or ["Dial:1001"]
     """
@@ -80,8 +122,9 @@ def _execute(ip, execute_items, auth=None, use_https=False, timeout=6, verify=Fa
 <CiscoIPPhoneExecute>
   {''.join(f'<ExecuteItem Priority="0" URL="{_xml_escape(u)}"/>' for u in execute_items)}
 </CiscoIPPhoneExecute>"""
-    schemes = (["https"] if use_https else ["http", "https"])
-    urls = [f"{s}://{ip}/CGI/Execute" for s in schemes]
+    urls = _request_urls(
+        ip, "/CGI/Execute", use_https=use_https, try_https_fallback=try_https_fallback, port=port
+    )
     r = _try_post(urls, data=body.encode("utf-8"),
                   headers={"Content-Type": "text/xml"}, auth=auth,
                   timeout=timeout, verify=verify)
@@ -97,7 +140,7 @@ def _execute(ip, execute_items, auth=None, use_https=False, timeout=6, verify=Fa
     return True
 
 
-def press_keys(ip, sequence, auth=None, use_https=False, timeout=6, verify=False):
+def press_keys(ip, sequence, auth=None, use_https=False, try_https_fallback=False, port=None, timeout=6, verify=False):
     """
     Press key sequence via KeyPad: '123#*' etc.
     """
@@ -110,30 +153,30 @@ def press_keys(ip, sequence, auth=None, use_https=False, timeout=6, verify=False
     for ch in str(sequence):
         if ch in keymap: items.append(keymap[ch])
         else: raise ValueError(f"Unsupported key: {ch!r}")
-    return _execute(ip, items, auth, use_https, timeout, verify)
+    return _execute(ip, items, auth, use_https, try_https_fallback, port, timeout, verify)
 
 
-def dial(ip, digits, auth=None, use_https=False, timeout=6, verify=False):
+def dial(ip, digits, auth=None, use_https=False, try_https_fallback=False, port=None, timeout=6, verify=False):
     """
     Initiate a call: many firmwares support Dial:<digits>. If not, falls back to keypad.
     """
     try:
-        return _execute(ip, [f"Dial:{digits}"], auth, use_https, timeout, verify)
+        return _execute(ip, [f"Dial:{digits}"], auth, use_https, try_https_fallback, port, timeout, verify)
     except Exception:
-        return press_keys(ip, str(digits), auth, use_https, timeout, verify)
+        return press_keys(ip, str(digits), auth, use_https, try_https_fallback, port, timeout, verify)
 
 
-def softkey(ip, index, auth=None, use_https=False, timeout=6, verify=False):
+def softkey(ip, index, auth=None, use_https=False, try_https_fallback=False, port=None, timeout=6, verify=False):
     """
     Press a softkey: index 1..4 maps to Soft1..Soft4 (older 79xx).
     """
     idx = int(index)
     if idx < 1 or idx > 4:
         raise ValueError("softkey index must be 1..4")
-    return _execute(ip, [f"Key:Soft{idx}"], auth, use_https, timeout, verify)
+    return _execute(ip, [f"Key:Soft{idx}"], auth, use_https, try_https_fallback, port, timeout, verify)
 
 
-def nav(ip, direction, auth=None, use_https=False, timeout=6, verify=False):
+def nav(ip, direction, auth=None, use_https=False, try_https_fallback=False, port=None, timeout=6, verify=False):
     """
     direction: one of up/down/left/right/select/back
     """
@@ -143,10 +186,10 @@ def nav(ip, direction, auth=None, use_https=False, timeout=6, verify=False):
         "right":"Key:NavRight", "select":"Key:NavSelect", "back":"Key:NavBack"
     }
     if d not in mapping: raise ValueError("direction must be up/down/left/right/select/back")
-    return _execute(ip, [mapping[d]], auth, use_https, timeout, verify)
+    return _execute(ip, [mapping[d]], auth, use_https, try_https_fallback, port, timeout, verify)
 
 
-def hardkey(ip, key, auth=None, use_https=False, timeout=6, verify=False):
+def hardkey(ip, key, auth=None, use_https=False, try_https_fallback=False, port=None, timeout=6, verify=False):
     """
     Common hard keys: speaker, headset, mute, messages, services, directories, settings
     """
@@ -158,7 +201,7 @@ def hardkey(ip, key, auth=None, use_https=False, timeout=6, verify=False):
     }
     if k not in mapping:
         raise ValueError(f"unsupported hard key: {key}")
-    return _execute(ip, [mapping[k]], auth, use_https, timeout, verify)
+    return _execute(ip, [mapping[k]], auth, use_https, try_https_fallback, port, timeout, verify)
 
 
 def _xml_escape(s):
@@ -294,15 +337,52 @@ def decode_cisco_screenshot(xml_content, reverse_bits=True, reverse_bytes=False,
 
 
 def main():
-    ap = argparse.ArgumentParser(description="AXL v1 phone lister")
+    ap = argparse.ArgumentParser(description="Cisco 79xx phone HTTP CGI control")
     ap.add_argument("--phoneip", required=True)
-    ap.add_argument("--user", required=True)
-    ap.add_argument("--pass", dest="pwd", required=True)
-    ap.add_argument('-o', '--output', default='screenshot.png', help='Output image file (default: screenshot.png)')
+    ap.add_argument("--user")
+    ap.add_argument("--pass", dest="pwd")
+    ap.add_argument("-o", "--output", default="screenshot.png", help="Screenshot output path")
+    ap.add_argument("--port", type=int, help="HTTP port (default 80)")
+    ap.add_argument("--https", action="store_true", help="Use HTTPS only")
+    ap.add_argument("--try-https", action="store_true", help="If HTTP fails, also try HTTPS")
+    ap.add_argument("--dial", metavar="DIGITS", help="Place a call")
+    ap.add_argument("--keys", metavar="SEQ", help='Keypad sequence e.g. "123#"')
+    ap.add_argument("--softkey", type=int, metavar="N", choices=(1, 2, 3, 4))
+    ap.add_argument("--nav", choices=["up", "down", "left", "right", "select", "back"])
+    ap.add_argument("--hook", choices=["speaker", "headset", "mute", "messages", "services", "directories", "settings"])
 
     args = ap.parse_args()
+    auth = (args.user, args.pwd) if args.user else None
+    http = {
+        "use_https": args.https,
+        "try_https_fallback": args.try_https,
+        "port": args.port,
+    }
 
-    data, ext, path = fetch_screenshot(args.phoneip, auth=(args.user, args.pwd), use_https=False)
+    if args.dial:
+        dial(args.phoneip, args.dial, auth, **http)
+        print(f"Dialed {args.dial}")
+        return
+    if args.keys:
+        press_keys(args.phoneip, args.keys, auth, **http)
+        print(f"Sent keys {args.keys}")
+        return
+    if args.softkey:
+        softkey(args.phoneip, args.softkey, auth, **http)
+        print(f"Pressed Soft{args.softkey}")
+        return
+    if args.nav:
+        nav(args.phoneip, args.nav, auth, **http)
+        print(f"Nav {args.nav}")
+        return
+    if args.hook:
+        hardkey(args.phoneip, args.hook, auth, **http)
+        print(f"Hook {args.hook}")
+        return
+
+    data, ext, path = fetch_screenshot(
+        args.phoneip, auth=auth, save_as=args.output, **http
+    )
     img = decode_cisco_screenshot(data, reverse_bits=True, reverse_bytes=False, flip_horizontal=False)
     img.save(args.output)
 
