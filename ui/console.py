@@ -658,31 +658,10 @@ class ConsoleApp:
             return
 
         call = self.client.state.calls.get(key, {})
-        is_held = bool(call.get("held", False))
-
-        if is_held:
-            # CM2 VirtualPhone behavior: speaker/on-hook retrieves held call.
-            # TODO: Verify that this is the right way to unhold a call
-            self.client.off_hook()
-
-            call["held"] = False
-            call["call_state_name"] = "Connected"
-            self.client.state.call_connected = True
-            self.client.state.media_active = True
-            self.client.events.call_connected.set()
+        if call.get("call_state") == 8 or call.get("call_state_name") == "Hold":
+            self.client.press_softkey("Resume")
         else:
-            # Use the button/stimulus value for Hold from the button template.
-            # button_type, instance = self._find_button_by_type_name("Hold")
-            # if button_type is not None:
-            #     self.client.handle_button_press(button_type, instance)
-            self.client.press_stimulus(0x0003, 1)
-
-            call["held"] = True
-            call["call_state_name"] = "Hold"
-            self.client.state.call_connected = False
-            self.client.state.media_active = False
-            self.client.events.call_connected.clear()
-            self.client.events.media_started.clear()
+            self.client.press_softkey("Hold")
 
     def _sync_selected_to_refs(self, refs):
         if not refs:

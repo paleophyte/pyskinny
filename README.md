@@ -406,6 +406,16 @@ The simulator runs an embedded **TFTP** server (via `tftpy`) and serves:
 |------|---------|
 | `XMLDefault.cnf.xml` | Fallback — points phones at the simulator's Skinny port |
 | `SEP<MAC>.cnf.xml` | Per-device file with auto-assigned DN (created on first TFTP or Skinny register) |
+| `Ringlist.xml` | Minimal empty ring list (seeded; optional PCM rings from CUCM) |
+
+**Optional TFTP files from CUCM** — Hardware phones (especially **7912/7905**) may also request locale files under `United_States/` (`gkdefault.cfg`, `gk<MAC>`, etc.) and ring PCM files referenced by `Ringlist.xml`. These are **not required for register and call** if `SEP<MAC>.cnf.xml` was served successfully. Copy them from your CallManager TFTP directory when you want full ring menus or legacy GK profiles:
+
+```bash
+# Example: mirror CUCM TFTP into a folder, then point the simulator at it
+python -m examples.run_simulator -v --advertise-host 10.102.172.11 --tftp-root D:\cucm-tftp-mirror
+```
+
+On CUCM, files usually live under the publisher’s TFTP path (OS Admin → **Software Upgrades** → TFTP file management, or the `tftp` folder on the server). Copy `Ringlist.xml`, `United_States\`, and any `.raw`/`.pcm` ring files the phone requests.
 
 **Port 69** is the Cisco default but usually requires **Administrator** (Windows) or **root** (Linux). If port 69 cannot be bound at startup, the simulator **automatically falls back to port 6969** and logs a warning.
 

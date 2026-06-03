@@ -185,6 +185,16 @@ def parse_call_state(client, payload):
             source="CallState",
         )
 
+    elif call_state == 8:             # Hold
+        if key not in client.state.active_calls_list:
+            client.state.active_calls_list.append(key)
+        client.state.call_active = True
+        client.state.active_call = True
+        client.state.call_connected = False
+        client.state.media_active = False
+        client.events.call_connected.clear()
+        client.events.media_started.clear()
+
     logger.info(
         f"[RECV] CallState "
         f"state={CALL_STATE_NAMES.get(call_state, 'UNKNOWN')} "
@@ -357,12 +367,24 @@ def parse_call_info(client, payload):
     remote_name = calling_party_name or called_party_name
     remote_number = calling_party or called_party
 
+    existing = client.state.calls.get(key, {})
+    existing_state = existing.get("call_state")
+    if existing_state in (5, 8):
+        call_state = existing_state
+        call_state_name = existing.get("call_state_name") or CALL_STATE_NAMES.get(call_state, "UNKNOWN")
+    elif call_type == 1:
+        call_state, call_state_name = 4, "RingIn"
+    elif call_type == 2:
+        call_state, call_state_name = 3, "RingOut"
+    else:
+        call_state, call_state_name = 3, "CallInfo"
+
     key = update_call_state(
         client,
         call_reference=call_reference,
         line_instance=line_instance or 1,
-        call_state=3,
-        call_state_name="CallInfo",
+        call_state=call_state,
+        call_state_name=call_state_name,
         source="CallInfo",
         calling_party_name=calling_party_name,
         calling_party=calling_party,

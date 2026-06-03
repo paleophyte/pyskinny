@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import tempfile
 import threading
 from pathlib import Path
@@ -107,6 +108,23 @@ class TftpConfigService:
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
         self._write_xml_default()
+        self._seed_static_assets()
+
+    def _seed_static_assets(self) -> None:
+        """Copy bundled Ringlist.xml etc. into TFTP root when not already present."""
+        assets_dir = Path(__file__).resolve().parent / "tftp_assets"
+        if not assets_dir.is_dir():
+            return
+        for src in assets_dir.rglob("*"):
+            if not src.is_file() or src.name == "README.txt":
+                continue
+            rel = src.relative_to(assets_dir)
+            dest = self._root / rel
+            if dest.exists():
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+            logger.debug("Seeded TFTP asset %s", rel)
 
     @property
     def root(self) -> Path:

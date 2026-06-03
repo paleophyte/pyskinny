@@ -88,6 +88,41 @@ def test_two_phones_register_and_call(sim_server):
         assert state_b.is_unregistered.wait(timeout=10)
 
 
+def test_two_phones_hold_and_resume(sim_server):
+    sim, host, port = sim_server
+
+    client_a, state_a = _register_client(host, port, "AABBCCDDEE03")
+    client_b, state_b = _register_client(host, port, "AABBCCDDEE04")
+    dn_b = sim.registry.get(state_b.device_name)
+
+    try:
+        _dial(client_a, dn_b)
+        assert client_b.events.call_ringing.wait(timeout=10)
+        client_b.press_softkey("Answer")
+        assert client_a.events.call_connected.wait(timeout=10)
+        assert client_b.events.call_connected.wait(timeout=10)
+
+        ref = str(client_a.state.active_calls_list[-1])
+        assert client_a.state.calls[ref]["call_state"] == 5
+
+        client_a.press_softkey("Hold")
+        time.sleep(0.75)
+        assert client_a.state.calls[ref]["call_state"] == 8
+        assert client_b.state.calls[ref]["call_state"] == 8
+
+        client_a.press_softkey("Resume")
+        time.sleep(0.5)
+        assert client_a.state.calls[ref]["call_state"] == 5
+        assert client_b.state.calls[ref]["call_state"] == 5
+        assert client_a.events.call_connected.wait(timeout=10)
+        assert client_b.events.call_connected.wait(timeout=10)
+    finally:
+        client_a.stop()
+        client_b.stop()
+        assert state_a.is_unregistered.wait(timeout=10)
+        assert state_b.is_unregistered.wait(timeout=10)
+
+
 def test_simulator_auto_answer_connects_without_manual_answer():
     sim = SkinnySimulator(
         host="127.0.0.1",

@@ -222,6 +222,10 @@ class SkinnySession:
             self._start_outbound()
         elif softkey_id == payloads.SK_ANSWER:
             self.hub.answer(self)
+        elif softkey_id == payloads.SK_HOLD:
+            self.hub.hold(self)
+        elif softkey_id == payloads.SK_RESUME:
+            self.hub.resume(self)
         elif softkey_id == payloads.SK_ENDCALL:
             self.hub.end_call(source=self)
         return True

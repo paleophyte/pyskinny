@@ -216,6 +216,82 @@ class CallHub:
             ])
             party.awaiting_media_ack = True
 
+    def hold(self, session: SkinnySession) -> None:
+        call = session.active_call
+        if not call or call.state != "connected" or call.callee is None:
+            return
+        call.state = "held"
+        logger.info("Hold call ref=%s by %s", call.call_ref, session.device_name)
+        self._notify_hold(call, holder=session)
+
+    def resume(self, session: SkinnySession) -> None:
+        call = session.active_call
+        if not call or call.state != "held" or call.callee is None:
+            return
+        call.state = "connected"
+        call.media_ports.clear()
+        logger.info("Resume call ref=%s by %s", call.call_ref, session.device_name)
+        self._notify_resumed(call)
+
+    def _notify_hold(self, call: SimCall, *, holder: SkinnySession) -> None:
+        assert call.callee is not None
+        remote = call.callee if holder is call.caller else call.caller
+        caller_name = call.caller.device_name
+        callee_name = call.callee.device_name
+        caller_dn = call.caller.directory_number
+        callee_dn = call.callee.directory_number
+
+        holder.send_many([
+            payloads.stop_tone(call.line, call.call_ref),
+            payloads.call_state(payloads.CALL_STATE_HOLD, call.line, call.call_ref),
+            payloads.call_info(
+                caller_name, caller_dn, callee_name, callee_dn,
+                line=call.line, call_ref=call.call_ref,
+                call_type=2 if holder is call.caller else 1,
+            ),
+            payloads.start_tone(payloads.TONE_HOLD, call.line, call.call_ref),
+            payloads.display_prompt_status("On Hold", call.line, call.call_ref),
+            payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=2),
+        ])
+
+        remote.send_many([
+            payloads.stop_tone(call.line, call.call_ref),
+            payloads.call_state(payloads.CALL_STATE_HOLD, call.line, call.call_ref),
+            payloads.call_info(
+                caller_name, caller_dn, callee_name, callee_dn,
+                line=call.line, call_ref=call.call_ref,
+                call_type=2 if remote is call.caller else 1,
+            ),
+            payloads.start_tone(payloads.TONE_REMOTE_HOLD, call.line, call.call_ref),
+            payloads.display_prompt_status("Remote Hold", call.line, call.call_ref),
+            payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=2),
+        ])
+
+    def _notify_resumed(self, call: SimCall) -> None:
+        assert call.callee is not None
+        caller = call.caller
+        callee = call.callee
+        caller_name = caller.device_name
+        callee_name = callee.device_name
+        caller_dn = caller.directory_number
+        callee_dn = callee.directory_number
+
+        for party in (caller, callee):
+            party.awaiting_media_ack = False
+            party.send_many([
+                payloads.stop_tone(call.line, call.call_ref),
+                payloads.call_state(payloads.CALL_STATE_CONNECTED, call.line, call.call_ref),
+                payloads.call_info(
+                    caller_name, caller_dn, callee_name, callee_dn,
+                    line=call.line, call_ref=call.call_ref,
+                    call_type=2 if party is caller else 1,
+                ),
+                payloads.display_prompt_status("Connected", call.line, call.call_ref),
+                payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=1),
+                payloads.open_receive_channel(call.call_ref),
+            ])
+            party.awaiting_media_ack = True
+
     def on_media_ack(self, session: SkinnySession, payload: bytes) -> None:
         call = session.active_call
         if not call or call.state != "connected":

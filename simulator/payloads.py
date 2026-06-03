@@ -15,16 +15,21 @@ CALL_STATE_ONHOOK = 2
 CALL_STATE_RINGOUT = 3
 CALL_STATE_RINGIN = 4
 CALL_STATE_CONNECTED = 5
+CALL_STATE_HOLD = 8
 CALL_STATE_PROCEED = 12
 
 # Skinny soft-key events (match messages/generic.py)
 SK_NEWCALL = 2
-SK_ANSWER = 11
+SK_HOLD = 3
 SK_ENDCALL = 9
+SK_RESUME = 10
+SK_ANSWER = 11
 
 # Cisco tone IDs used by pyskinny client
 TONE_DIAL = 33
 TONE_RING = 36
+TONE_HOLD = 58
+TONE_REMOTE_HOLD = 59
 
 
 def register_ack(keepalive: int = 30) -> bytes:
@@ -62,6 +67,7 @@ def softkey_template_res() -> bytes:
         (b"NewCall\x00", 2),
         (b"Answer\x00", 11),
         (b"Hold\x00", 3),
+        (b"Resume\x00", 10),
         (b"EndCall\x00", 9),
     ]
     body = struct.pack("<III", 0, len(keys), 12)
@@ -74,7 +80,7 @@ def softkey_template_res() -> bytes:
 def softkey_set_res() -> bytes:
     from simulator.protocol import pack_message
 
-    skti = bytes([2, 1, 11, 3, 9] + [0] * 11)
+    skti = bytes([2, 1, 11, 3, 10, 9] + [0] * 10)
     skii = b""
     for info_id in (302, 301, 311, 303, 309):
         skii += struct.pack("<H", info_id)
