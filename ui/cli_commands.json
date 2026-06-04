@@ -30,8 +30,11 @@
     {"command": "hold",           "help": "Place active call on hold",    "function": "exec_phone_hold"},
     {"command": "resume",         "help": "Resume held call",             "function": "exec_phone_resume"},
     {"command": "end",            "help": "End active call",              "function": "exec_phone_end"},
-    {"command": "transfer",       "help": "Transfer call (blind if number given)",                                                    "subcommands": [
+    {"command": "transfer",       "help": "Blind transfer (number completes immediately)",                                            "subcommands": [
       {"command": "%W",           "help": "Destination number (optional)", "function": "exec_phone_transfer",     "optional": true}
+    ]},
+    {"command": "consult-transfer", "help": "Consulted transfer (dial, talk, then complete)",                                       "subcommands": [
+      {"command": "%W",           "help": "Destination number",            "function": "exec_phone_consult_transfer"}
     ]},
     {"command": "send",           "help": "Send skinny message to call manager",                                                      "subcommands": [
       {"command": "softkeyevent", "help": "Send softkeyevent message",                                                                "subcommands": [

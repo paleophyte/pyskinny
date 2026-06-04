@@ -63,6 +63,8 @@ class SimCall:
     transfer_active: bool = False
     transfer_initiator: SkinnySession | None = None
     transfer_digits: str = ""
+    transfer_consult_ref: int | None = None
+    transfer_primary_ref: int | None = None
     held_by: SkinnySession | None = None
 
 
@@ -156,7 +158,11 @@ class CallHub:
             if caller is not call.transfer_initiator:
                 return
             if digit == "#":
-                self._complete_blind_transfer(call)
+                consult = self._consult_for_primary(call)
+                if consult and consult.state == "connected":
+                    self._complete_consulted_transfer(call, consult, caller)
+                else:
+                    self._complete_blind_transfer(call)
                 return
             call.transfer_digits += digit
             caller.send(
@@ -164,6 +170,7 @@ class CallHub:
                     call.transfer_digits, line=call.line, call_ref=call.call_ref
                 )
             )
+            self._try_complete_transfer_dial(call)
             return
 
         if call.state == "connected" and not (call.ivr and call.ivr_menu_active):
@@ -517,23 +524,174 @@ class CallHub:
         logger.info("Resume call ref=%s by %s", call.call_ref, session.device_name)
         self._notify_resumed(call)
 
+    def _cancel_consult_leg(self, primary: SimCall, consult: SimCall) -> None:
+        line, ref = consult.line, consult.call_ref
+        if self.media_hub:
+            self.media_hub.stop_call(ref)
+        if consult.media_ports:
+            for party in (consult.caller, consult.callee):
+                if party is None:
+                    continue
+                party.send(payloads.stop_media_transmission(ref))
+                party.send(payloads.close_receive_channel(ref))
+            consult.media_ports.clear()
+        for party in (consult.caller, consult.callee):
+            if party is None:
+                continue
+            if party.active_call is consult:
+                party.active_call = primary if party in (primary.caller, primary.callee) else None
+            party.send(payloads.stop_tone(line, ref))
+            party.send(payloads.call_state(payloads.CALL_STATE_ONHOOK, line, ref))
+        self._calls.pop(consult.call_ref, None)
+        primary.transfer_consult_ref = None
+        consult.state = "ended"
+
     def on_transfer_softkey(self, session: SkinnySession) -> None:
         call = session.active_call
-        if not call or call.state != "connected" or call.ivr:
+        if not call:
             return
-        if call.transfer_active:
-            if session is call.transfer_initiator:
-                self._complete_blind_transfer(call)
-            return
-        self._begin_blind_transfer(call, session)
 
-    def _begin_blind_transfer(self, call: SimCall, initiator: SkinnySession) -> None:
+        if call.transfer_primary_ref:
+            primary = self._calls.get(call.transfer_primary_ref)
+            if primary and call.state == "connected":
+                self._complete_consulted_transfer(primary, call, session)
+            elif (
+                primary
+                and primary.transfer_active
+                and session is primary.transfer_initiator
+            ):
+                self._complete_blind_transfer(primary)
+            return
+
+        if not call.ivr and call.transfer_active:
+            if session is call.transfer_initiator:
+                consult = self._consult_for_primary(call)
+                if consult and consult.state == "connected":
+                    self._complete_consulted_transfer(call, consult, session)
+                else:
+                    self._complete_blind_transfer(call)
+            return
+
+        if call.state != "connected" or call.ivr:
+            return
+        self._begin_transfer(call, session)
+
+    def _consult_for_primary(self, primary: SimCall) -> SimCall | None:
+        ref = primary.transfer_consult_ref
+        if ref is None:
+            return None
+        return self._calls.get(ref)
+
+    def _try_complete_transfer_dial(self, call: SimCall) -> None:
+        if not call.transfer_active or not call.transfer_initiator:
+            return
+        if call.transfer_consult_ref is not None:
+            return
+        dn = call.transfer_digits.strip()
+        if not dn:
+            return
+        target = self.session_for_dn(dn)
+        if not target or target is call.transfer_initiator:
+            return
+        if target.active_call is not None:
+            return
+        self._start_consult_leg(call, target)
+
+    def _start_consult_leg(self, primary: SimCall, target: SkinnySession) -> None:
+        initiator = primary.transfer_initiator
+        if initiator is None:
+            return
+        other = primary.callee if initiator is primary.caller else primary.caller
+        dn = primary.transfer_digits.strip()
+
+        logger.info(
+            "Consult transfer dial ref=%s by %s -> DN %s (held=%s)",
+            primary.call_ref,
+            initiator.device_name,
+            dn,
+            other.device_name if other else "?",
+        )
+
+        if primary.state != "held":
+            primary.state = "held"
+            primary.held_by = initiator
+            self._notify_hold(primary, holder=initiator)
+
+        try:
+            consult = self.begin_outbound(initiator, line=primary.line)
+        except RuntimeError:
+            logger.warning("Consult transfer: could not start outbound for %s", initiator.device_name)
+            return
+
+        consult.dialed = dn
+        consult.transfer_primary_ref = primary.call_ref
+        primary.transfer_consult_ref = consult.call_ref
+
+        consult.callee = target
+        consult.state = "ringing"
+        target.active_call = consult
+
+        caller_name = initiator.device_name
+        callee_name = target.device_name
+        caller_dn = initiator.directory_number
+        callee_dn = target.directory_number
+        line, ref = consult.line, consult.call_ref
+
+        consult.caller.send_many([
+            payloads.stop_tone(line, ref),
+            payloads.call_state(payloads.CALL_STATE_RINGOUT, line, ref),
+            payloads.call_info(
+                caller_name, caller_dn, callee_name, callee_dn,
+                line=line, call_ref=ref, call_type=2,
+            ),
+            payloads.display_prompt_status("Ring Out", line, ref),
+            payloads.select_soft_keys(line, ref, softkey_set_index=8),
+        ])
+
+        ring_common = [payloads.call_state(payloads.CALL_STATE_RINGIN, line, ref)]
+        if target._legacy_phone:
+            target.send_many(
+                ring_common
+                + [
+                    payloads.select_soft_keys(line, ref, softkey_set_index=3),
+                    payloads.legacy_display_text(caller_dn, line, ref),
+                    payloads.display_pri_notify(caller_dn),
+                    payloads.call_info(
+                        caller_name, caller_dn, callee_name, callee_dn,
+                        line=line, call_ref=ref, call_type=1,
+                    ),
+                ]
+                + self._legacy_ring_in_tail(consult)
+            )
+        else:
+            target.send_many(
+                ring_common
+                + [
+                    payloads.call_info(
+                        caller_name, caller_dn, callee_name, callee_dn,
+                        line=line, call_ref=ref, call_type=1,
+                    ),
+                    payloads.start_tone(payloads.TONE_RING, line, ref),
+                    payloads.display_prompt_status("Ring In", line, ref),
+                    payloads.select_soft_keys(line, ref, softkey_set_index=3),
+                ]
+            )
+
+        if self.should_auto_answer(target):
+            threading.Thread(
+                target=self._auto_answer_after_delay,
+                args=(target,),
+                name=f"auto-answer-{target.device_name}",
+                daemon=True,
+            ).start()
+
+    def _begin_transfer(self, call: SimCall, initiator: SkinnySession) -> None:
         call.transfer_active = True
         call.transfer_initiator = initiator
         call.transfer_digits = ""
         other = call.callee if initiator is call.caller else call.caller
         logger.info(
-            "Blind transfer begin ref=%s by %s (other=%s)",
+            "Transfer begin ref=%s by %s (other=%s)",
             call.call_ref,
             initiator.device_name,
             other.device_name if other else "?",
@@ -569,6 +727,9 @@ class CallHub:
         remaining = call.callee if initiator is call.caller else call.caller
         if remaining is None:
             return
+        consult = self._consult_for_primary(call)
+        if consult:
+            self._cancel_consult_leg(call, consult)
         logger.info(
             "Blind transfer complete ref=%s %s -> DN %s (remaining=%s)",
             call.call_ref,
@@ -621,6 +782,101 @@ class CallHub:
             payloads.select_soft_keys(line, ref, softkey_set_index=8),
         ])
         self._try_complete_dial(call)
+
+    def _complete_consulted_transfer(
+        self,
+        primary: SimCall,
+        consult: SimCall,
+        initiator: SkinnySession,
+    ) -> None:
+        if consult.callee is None:
+            return
+        remaining = primary.callee if initiator is primary.caller else primary.caller
+        target = consult.callee
+        if remaining is None or remaining is initiator or target is initiator:
+            return
+
+        line, ref = primary.line, primary.call_ref
+        logger.info(
+            "Consult transfer complete ref=%s %s -> %s (remaining=%s)",
+            ref,
+            initiator.device_name,
+            target.directory_number,
+            remaining.device_name,
+        )
+
+        if self.media_hub:
+            self.media_hub.stop_call(ref)
+            self.media_hub.stop_call(consult.call_ref)
+
+        for leg in (primary, consult):
+            if not leg.media_ports:
+                continue
+            for party in (leg.caller, leg.callee):
+                if party is None:
+                    continue
+                party.send(payloads.stop_media_transmission(leg.call_ref))
+                party.send(payloads.close_receive_channel(leg.call_ref))
+            leg.media_ports.clear()
+
+        self._send_party_on_hook(initiator, consult.line, consult.call_ref)
+        if consult.call_ref != ref:
+            initiator.active_call = None
+            initiator.awaiting_media_ack = False
+            initiator.send(payloads.stop_tone(line, ref))
+            initiator.send(
+                payloads.call_state(payloads.CALL_STATE_ONHOOK, line, ref)
+            )
+
+        self._calls.pop(consult.call_ref, None)
+        consult.state = "ended"
+        if target.active_call is consult:
+            target.active_call = None
+
+        primary.transfer_active = False
+        primary.transfer_initiator = None
+        primary.transfer_digits = ""
+        primary.transfer_consult_ref = None
+        primary.caller = remaining
+        primary.callee = target
+        primary.state = "connected"
+        primary.ivr = False
+        primary.ivr_menu_active = False
+        primary.dialed = target.directory_number or ""
+        primary.held_by = None
+        primary.media_ports.clear()
+
+        remaining.active_call = primary
+        target.active_call = primary
+
+        caller_name = remaining.device_name
+        callee_name = target.device_name
+        caller_dn = remaining.directory_number
+        callee_dn = target.directory_number
+
+        for party in (remaining, target):
+            if party._legacy_phone and party is target:
+                party.send_many(
+                    self._legacy_callee_connect_packets(
+                        primary,
+                        caller_name=caller_name,
+                        caller_dn=caller_dn,
+                        callee_name=callee_name,
+                        callee_dn=callee_dn,
+                    )
+                )
+            else:
+                party.send_many(
+                    self._modern_connect_packets(
+                        primary,
+                        party,
+                        caller_name=caller_name,
+                        caller_dn=caller_dn,
+                        callee_name=callee_name,
+                        callee_dn=callee_dn,
+                    )
+                )
+            party.awaiting_media_ack = True
 
     def _send_party_on_hook(self, party: SkinnySession, line: int, call_ref: int) -> None:
         party.active_call = None

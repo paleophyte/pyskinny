@@ -95,6 +95,19 @@ def exec_phone_transfer(ctx, clitext, argv, log):
     log("")
 
 
+def exec_phone_consult_transfer(ctx, clitext, argv, log):
+    client = _require_client(ctx, log)
+    if not client:
+        return
+    if len(argv) < 3:
+        log("% Missing destination number")
+        return
+    number = argv[2]
+    log(f"Consult transfer to {number} ...")
+    client.consulted_transfer(number)
+    log("")
+
+
 def exec_call_number(client, clitext, argv, log):
     if not argv:
         log("% Missing number")

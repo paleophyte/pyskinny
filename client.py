@@ -445,6 +445,36 @@ class SCCPClient:
         time.sleep(pause)
         self.press_softkey("Transfer")
 
+    def consulted_transfer(
+        self,
+        number: str,
+        *,
+        pause: float = 0.3,
+        consult_timeout: float = 30.0,
+    ) -> None:
+        """Consulted transfer: Transfer -> dial -> wait for answer -> Transfer."""
+        import time
+
+        self.events.call_connected.clear()
+        self.press_softkey("Transfer")
+        time.sleep(pause)
+        for ch in number:
+            if ch == "*":
+                code = 0x0E
+            elif ch == "#":
+                code = 0x0F
+            elif ch.isdigit():
+                code = int(ch)
+            else:
+                continue
+            handle_keypad_press(self, 1, code)
+            time.sleep(0.05)
+        if not self.events.call_connected.wait(timeout=consult_timeout):
+            self.logger.warning("Consult transfer: consult party did not connect in time")
+            return
+        time.sleep(pause)
+        self.press_softkey("Transfer")
+
     def press_stimulus(self, button_type, instance):
         # Simplified logic. Find the key in the softkey_template, send the event.
         # key_defs = self.state.softkey_template

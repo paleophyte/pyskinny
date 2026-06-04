@@ -141,9 +141,26 @@ On **A** connected to **B**:
 1. **Transfer** → dial **C** → **Transfer** again (or `#` on sim).
 2. **A** goes on-hook; **C** rings; **C** answers → connected to **B**.
 
+CLI: `phone transfer 5002` or macro `TRANSFER 5002`.
+
 ---
 
-## 8. Verify with tests
+## 8. Consulted transfer (sim)
+
+On **A** connected to **B** — talk to **C** before completing:
+
+1. **Transfer** → dial **C** → wait for **C** to answer (consult call).
+2. **Transfer** again → **A** drops; **B** and **C** connected.
+
+CLI: `phone consult-transfer 5002`  
+Macro: `CONSULT_TRANSFER 5002`  
+Python: `client.consulted_transfer("5002")`
+
+If you press the second **Transfer** before **C** answers, the sim treats it as a **blind** transfer (same as section 7).
+
+---
+
+## 9. Verify with tests
 
 ```powershell
 # Simulator call flows (no audio device needed)

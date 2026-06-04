@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import socket
+import threading
 import time
 
 import messages  # noqa: F401
@@ -224,6 +225,47 @@ def test_simulator_blind_transfer(sim_server):
         client_c.press_softkey("Answer")
         assert client_b.events.call_connected.wait(timeout=10), "transferred party not connected"
         assert client_c.events.call_connected.wait(timeout=10), "transfer target not connected"
+    finally:
+        _stop_client(client_a, state_a)
+        _stop_client(client_b, state_b)
+        _stop_client(client_c, state_c)
+
+
+def test_simulator_consulted_transfer(sim_server):
+    sim, host, port = sim_server
+
+    client_a, state_a = _register_client(host, port, "AABBCCDDEE15")
+    client_b, state_b = _register_client(host, port, "AABBCCDDEE16")
+    client_c, state_c = _register_client(host, port, "AABBCCDDEE17")
+
+    dn_b = sim.registry.get(state_b.device_name)
+    dn_c = sim.registry.get(state_c.device_name)
+
+    try:
+        _dial(client_a, dn_b)
+        assert client_b.events.call_ringing.wait(timeout=10)
+        client_b.press_softkey("Answer")
+        assert client_a.events.call_connected.wait(timeout=10)
+        assert client_b.events.call_connected.wait(timeout=10)
+
+        client_a.events.call_connected.clear()
+
+        def _answer_c():
+            assert client_c.events.call_ringing.wait(timeout=10)
+            client_c.press_softkey("Answer")
+
+        answer_thread = threading.Thread(target=_answer_c, daemon=True)
+        answer_thread.start()
+        client_a.consulted_transfer(dn_c, pause=0.15, consult_timeout=10)
+        answer_thread.join(timeout=5)
+
+        deadline = time.time() + 5
+        while time.time() < deadline and client_a.state.active_calls_list:
+            time.sleep(0.1)
+        assert not client_a.state.active_calls_list, "transferor should be on hook after complete"
+
+        assert client_b.events.call_connected.wait(timeout=10), "transferred party not connected"
+        assert client_c.events.call_connected.wait(timeout=10), "consult target not connected"
     finally:
         _stop_client(client_a, state_a)
         _stop_client(client_b, state_b)

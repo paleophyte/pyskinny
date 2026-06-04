@@ -12,6 +12,7 @@ from client import SCCPClient
 from state import PhoneState
 from ui.cli import load_cli_spec, resolve_command_with_tokens
 from ui.cli_handlers import (
+    exec_phone_consult_transfer,
     exec_phone_end,
     exec_phone_hold,
     exec_phone_resume,
@@ -84,6 +85,30 @@ def test_blind_transfer_sequence(mock_keypad, mock_softkey):
     assert [c.args[2] for c in mock_keypad.call_args_list] == [1, 0, 0, 1]
 
 
+@patch("client.handle_softkey_press")
+@patch("client.handle_keypad_press")
+def test_consulted_transfer_sequence(mock_keypad, mock_softkey):
+    client = _make_client()
+    with patch.object(client.events.call_connected, "wait", return_value=True):
+        client.consulted_transfer("1001", pause=0, consult_timeout=0.1)
+
+    assert mock_softkey.call_count == 2
+    mock_softkey.assert_any_call(client, 1, 4, 16777221)
+    assert [c.args[2] for c in mock_keypad.call_args_list] == [1, 0, 0, 1]
+
+
+@patch("client.SCCPClient.consulted_transfer")
+def test_cli_consult_transfer(mock_consult):
+    client = _make_client()
+    exec_phone_consult_transfer(
+        _Ctx(client),
+        "phone consult-transfer 1002",
+        ["phone", "consult-transfer", "1002"],
+        lambda m: None,
+    )
+    mock_consult.assert_called_once_with("1002")
+
+
 class _Ctx:
     def __init__(self, client=None):
         self.client = client
@@ -143,6 +168,13 @@ def test_cli_spec_parses_phone_hold_and_transfer():
     assert func == "exec_phone_transfer"
     assert tokens == ["phone", "transfer", "1001"]
 
+    func, tokens, _caps, err = resolve_command_with_tokens(
+        spec, ["phone", "consult-transfer", "1002"]
+    )
+    assert err == ""
+    assert func == "exec_phone_consult_transfer"
+    assert tokens == ["phone", "consult-transfer", "1002"]
+
 
 @patch("ui.macro_cli.logger")
 @patch("client.handle_softkey_press")
@@ -179,3 +211,13 @@ def test_macro_transfer_with_number(mock_keypad, mock_softkey, _logger):
     run_macro(client, instructions, {}, stop)
     assert mock_softkey.call_count >= 2
     assert any(c.args[2] == 9 for c in mock_softkey.call_args_list)
+
+
+@patch("ui.macro_cli.logger")
+@patch("client.SCCPClient.consulted_transfer")
+def test_macro_consult_transfer(mock_consult, _logger):
+    client = _make_client()
+    stop = threading.Event()
+    instructions, _ = parse_macro_script("CONSULT_TRANSFER 1003, END")
+    run_macro(client, instructions, {}, stop)
+    mock_consult.assert_called_once_with("1003")
