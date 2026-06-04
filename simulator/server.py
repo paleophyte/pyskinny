@@ -186,6 +186,11 @@ class SkinnySimulator:
         if self._admin_http:
             self._admin_http.shutdown()
             self._admin_http.server_close()
+            self._admin_http = None
+        if self._cip_http:
+            self._cip_http.shutdown()
+            self._cip_http.server_close()
+            self._cip_http = None
         if self._sock:
             try:
                 self._sock.close()

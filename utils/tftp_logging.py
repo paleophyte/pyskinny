@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 
 _TFTPY_LOGGERS = ("tftpy", "tftpy.TftpServer", "tftpy.TftpStates", "tftpy.TftpContexts")
@@ -40,7 +39,7 @@ class TftpyLogFilter(logging.Filter):
 
         if "Fatal exception thrown from session" in flat and "File not found:" in flat:
             path = flat.rsplit("File not found:", 1)[-1].strip()
-            path = os.path.basename(path)
+            path = re.split(r"[/\\]", path)[-1]
             record.msg = "TFTP request for missing file: %s"
             record.args = (path,)
             record.levelno = logging.INFO

@@ -35,21 +35,25 @@ def test_tftpy_filter_resend_dat():
 
 def test_tftpy_filter_missing_file_downgrade():
     filt = TftpyLogFilter()
-    record = logging.LogRecord(
-        name="tftpy.TftpServer",
-        level=logging.ERROR,
-        pathname="",
-        lineno=0,
-        msg=(
-            "Fatal exception thrown from session 127.0.0.1:58551: "
-            r"File not found: C:\temp\pyskinny-tftp\gkdefault.cfg"
-        ),
-        args=(),
-        exc_info=None,
-    )
-    assert filt.filter(record) is True
-    assert record.levelno == logging.INFO
-    assert record.getMessage() == "TFTP request for missing file: gkdefault.cfg"
+    for missing_path in (
+        r"C:\temp\pyskinny-tftp\gkdefault.cfg",
+        "/tmp/pyskinny-tftp-abc/gkdefault.cfg",
+    ):
+        record = logging.LogRecord(
+            name="tftpy.TftpServer",
+            level=logging.ERROR,
+            pathname="",
+            lineno=0,
+            msg=(
+                "Fatal exception thrown from session 127.0.0.1:58551: "
+                f"File not found: {missing_path}"
+            ),
+            args=(),
+            exc_info=None,
+        )
+        assert filt.filter(record) is True
+        assert record.levelno == logging.INFO
+        assert record.getMessage() == "TFTP request for missing file: gkdefault.cfg"
 
 
 def test_configure_tftpy_logging_idempotent():
