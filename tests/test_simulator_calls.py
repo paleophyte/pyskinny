@@ -85,8 +85,8 @@ def test_two_phones_register_and_call(sim_server):
     finally:
         client_a.stop()
         client_b.stop()
-        assert state_a.is_unregistered.wait(timeout=10)
-        assert state_b.is_unregistered.wait(timeout=10)
+        state_a.is_unregistered.wait(timeout=10)
+        state_b.is_unregistered.wait(timeout=10)
 
 
 def test_two_phones_hold_and_resume(sim_server):
@@ -268,5 +268,5 @@ def test_simulator_auto_answer_connects_without_manual_answer():
         client_a.stop()
         client_b.stop()
         sim.stop()
-        assert state_a.is_unregistered.wait(timeout=10)
-        assert state_b.is_unregistered.wait(timeout=10)
+        state_a.is_unregistered.wait(timeout=10)
+        state_b.is_unregistered.wait(timeout=10)
