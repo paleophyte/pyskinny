@@ -62,8 +62,8 @@ class SkinnySimulator:
             self._media_hub.tone_hz = rtp_sim_tone_hz
         if rtp_sim_peer == "loopback":
             logger.info(
-                "Sim loopback active: client should use "
-                "--rtp-loopback --rtp-loopback-monitor on run_console to send/hear echo"
+                "Sim loopback active: use --rtp-mic --rtp-loopback-monitor on run_console "
+                "(not --rtp-loopback, which re-feeds the sim tone and layers echoes)"
             )
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None

@@ -208,21 +208,47 @@ class SCCPClient:
 
         return "ok", msg_id, data_length, payload
 
+    @staticmethod
+    def numeric_call_ref(ref) -> int | None:
+        """Skinny call refs are numeric; map synthetic keys (cm2-N) via calls dict."""
+        if ref is None:
+            return None
+        if isinstance(ref, int):
+            return ref if ref > 0 else None
+        s = str(ref).strip()
+        if s.isdigit():
+            n = int(s)
+            return n if n > 0 else None
+        return None
+
     def resolve_call_target(self, line=1, call_ref=0) -> tuple[int, int]:
         """Resolve line + call reference for softkey/stimulus messages."""
         active_line = line or 1
-        active_call_ref = call_ref
-        if call_ref == 0 and self.state.active_call:
+        numeric_ref = self.numeric_call_ref(call_ref)
+
+        if numeric_ref is None and call_ref:
+            call = self.state.calls.get(str(call_ref), {})
+            numeric_ref = self.numeric_call_ref(call.get("call_reference"))
+
+        if numeric_ref is None and self.state.active_call:
             active_line = getattr(self.state, "active_call_line_instance", None) or active_line
-            ref = getattr(self.state, "selected_call_reference", None)
-            if ref is None and self.state.active_calls_list:
-                ref = self.state.active_calls_list[0]
-            if ref is not None:
-                active_call_ref = int(ref)
-                call = self.state.calls.get(str(ref), {})
-                if call.get("line_instance"):
-                    active_line = int(call["line_instance"])
-        return active_line, active_call_ref
+            candidates = [
+                getattr(self.state, "selected_call_reference", None),
+                *(self.state.active_calls_list or []),
+            ]
+            for candidate in candidates:
+                nref = self.numeric_call_ref(candidate)
+                if nref is None and candidate is not None:
+                    call = self.state.calls.get(str(candidate), {})
+                    nref = self.numeric_call_ref(call.get("call_reference"))
+                if nref is not None:
+                    numeric_ref = nref
+                    call = self.state.calls.get(str(candidate), {}) or self.state.calls.get(str(nref), {})
+                    if call.get("line_instance"):
+                        active_line = int(call["line_instance"])
+                    break
+
+        return active_line, numeric_ref or 0
 
     def press_softkey(self, softkey_name, line=1, call_ref=0):
         key_defs = self.state.softkey_template or {}

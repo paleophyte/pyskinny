@@ -143,21 +143,29 @@ class ConsoleApp:
         else:
             self._refresh_button_actions()
 
+    def _ui_softkey_set(self) -> int | None:
+        """Prefer the latest numeric-call SelectSoftKeys set during active calls."""
+        state = self.client.state
+        if not (getattr(state, "active_call", False) or getattr(state, "active_calls_list", None)):
+            return state.selected_softkey_set
+
+        best_idx = None
+        best_ref = -1
+        for key, meta in (state.selected_softkeys or {}).items():
+            if not str(key).isdigit():
+                continue
+            ref = int(key)
+            idx = meta.get("softkeyset_index")
+            if idx is not None and ref >= best_ref:
+                best_ref = ref
+                best_idx = idx
+        return best_idx if best_idx is not None else state.selected_softkey_set
+
     def _refresh_softkey_actions(self):
         labels = []
         bindings = []
 
-        scr = self.client.state.selected_call_reference
-        scr_call_state = None
-
-        if scr:
-            scr_call_state = (
-                self.client.state.selected_softkeys
-                .get(str(scr), {})
-                .get("softkeyset_index", None)
-            )
-
-        keys = self.client.state.get_current_softkeys(scr_call_state)
+        keys = self.client.state.get_current_softkeys(self._ui_softkey_set())
 
         for lab in keys:
             label = lab[0]
@@ -230,12 +238,10 @@ class ConsoleApp:
 
         if kind == "softkey":
             label = action["label"]
-
-            scr = self.client.state.selected_call_reference or 0
+            _, call_ref = self.client.resolve_call_target(self.line, 0)
             if label == "NewCall":
-                scr = 0
-
-            self.client.press_softkey(label, line=self.line, call_ref=scr)
+                call_ref = 0
+            self.client.press_softkey(label, line=self.line, call_ref=call_ref)
             return
 
         if kind == "button":

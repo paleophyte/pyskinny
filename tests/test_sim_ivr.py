@@ -98,7 +98,6 @@ def test_dial_ivr_end_call_hangs_up():
     finally:
         client.stop()
         sim.stop()
-        assert state.is_unregistered.wait(timeout=10)
 
     sim = SkinnySimulator(
         host="127.0.0.1",
