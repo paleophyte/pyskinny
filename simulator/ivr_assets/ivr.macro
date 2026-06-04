@@ -1,0 +1,23 @@
+# Sim virtual IVR — caller dials --ivr-dn (same syntax as examples/ivr.macro)
+ON_DISCONNECT END
+
+START:
+PLAY welcome.wav
+GOTO MENU
+
+MENU:
+WAIT_DIGIT 0
+SWITCH last_digit 1:LOOPBACK;2:TONE;9:HANGUP;#:HANGUP;DEFAULT:MENU
+
+LOOPBACK:
+LOOPBACK
+PROMPT Loopback active
+GOTO MENU
+
+TONE:
+TONE
+PROMPT Tone test
+GOTO MENU
+
+HANGUP:
+END

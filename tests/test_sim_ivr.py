@@ -163,9 +163,15 @@ def test_ivr_menu_keypad_loopback():
         ref = client.state.active_calls_list[-1]
         call_ref = client.numeric_call_ref(ref) or int(str(ref))
 
+        # Allow macro runner to reach MENU/WAIT_DIGIT (PLAY welcome may take a few seconds)
+        time.sleep(0.5)
         handle_keypad_press(client, 1, 1)
-        time.sleep(0.3)
-
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            session = sim._media_hub._sessions.get(call_ref)
+            if session and session.legs[0].echo is not None:
+                break
+            time.sleep(0.1)
         session = sim._media_hub._sessions.get(call_ref)
         assert session is not None
         assert session.legs[0].echo is not None
@@ -203,7 +209,9 @@ def test_ivr_menu_hangup_key():
             time.sleep(0.1)
         assert sim._media_hub and sim._media_hub._sessions
 
+        time.sleep(0.5)
         handle_keypad_press(client, 1, 9)
+        time.sleep(0.5)
         assert client.events.call_ended.wait(timeout=10), "IVR 9 should hang up"
     finally:
         client.stop()

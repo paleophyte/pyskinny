@@ -118,6 +118,10 @@ def main() -> None:
 
     configure_logging_from_verbose(args.verbose)
 
+    rtp_sim_peer = args.rtp_sim_peer
+    if args.ivr_dn and rtp_sim_peer == "off":
+        rtp_sim_peer = "loopback"
+
     sim = SkinnySimulator(
         host=args.host,
         port=args.port,
@@ -128,7 +132,7 @@ def main() -> None:
         advertise_host=args.advertise_host,
         tftp_root=args.tftp_root,
         auto_answer=auto_answer or None,
-        rtp_sim_peer=args.rtp_sim_peer,
+        rtp_sim_peer=rtp_sim_peer,
         rtp_sim_tone_hz=args.rtp_sim_tone_hz,
         rtp_sim_loopback_delay_ms=args.rtp_sim_loopback_delay,
         rtp_sim_loopback_gain_db=args.rtp_sim_loopback_gain,

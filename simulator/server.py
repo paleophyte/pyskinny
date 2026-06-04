@@ -52,12 +52,12 @@ class SkinnySimulator:
             loopback_preamble_sec=rtp_sim_loopback_preamble_sec,
         ) if rtp_sim_peer != "off" else None
         if self.ivr_dn and media_hub is None:
-            media_hub = SimMediaHub(mode="tone")
+            media_hub = SimMediaHub(mode="loopback")
         self.hub = CallHub(media_hub=media_hub, ivr_dn=self.ivr_dn)
         self._media_hub = media_hub
         if self.ivr_dn:
             logger.info(
-                "Virtual IVR on DN %s — keypad menu: 1=loopback 2=tone 9=hangup",
+                "Virtual IVR on DN %s — macro script in simulator/ivr_assets/ivr.macro",
                 self.ivr_dn,
             )
         if auto_answer:
@@ -65,7 +65,7 @@ class SkinnySimulator:
                 self.hub.set_auto_answer(target)
         if self._media_hub is not None:
             self._media_hub.tone_hz = rtp_sim_tone_hz
-        if rtp_sim_peer == "loopback":
+        if rtp_sim_peer == "loopback" and not self.ivr_dn:
             logger.info(
                 "Sim loopback active: use --rtp-mic --rtp-loopback-monitor on run_console "
                 "(not --rtp-loopback, which re-feeds the sim tone and layers echoes)"

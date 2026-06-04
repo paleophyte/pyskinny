@@ -421,3 +421,41 @@ def apply_media_options(state: PhoneState, args, cfg: dict | None) -> None:
         state.rtp_stats_interval = float(interval)
     elif getattr(args, "rtp_stats", False) and state.rtp_stats_interval <= 0:
         state.rtp_stats_interval = 5.0
+
+    _apply_ivr_lab_media_defaults(state, args, cfg)
+
+
+def _media_explicitly_configured(args, cfg) -> bool:
+    if getattr(args, "no_audio", False):
+        return True
+    if cfg and cfg.get("no_audio"):
+        return True
+    if getattr(args, "rtp_play_mode", None) is not None:
+        return True
+    if cfg and cfg.get("rtp_play_mode"):
+        return True
+    for flag in ("rtp_mic", "rtp_tone", "rtp_loopback", "rtp_loopback_monitor", "rtp_wav"):
+        if getattr(args, flag, False):
+            return True
+    if cfg:
+        for key in ("rtp_mic", "rtp_tone", "rtp_loopback", "rtp_loopback_monitor", "rtp_wav"):
+            if cfg.get(key):
+                return True
+    return False
+
+
+def _apply_ivr_lab_media_defaults(state: PhoneState, args, cfg) -> None:
+    """
+    When audio is on and no RTP flags were given, enable mic TX + local RX monitor.
+
+    Required for sim IVR loopback (press 1) without passing --rtp-mic
+    --rtp-loopback-monitor on every run_console invocation.
+    """
+    if not state.enable_audio:
+        return
+    if _media_explicitly_configured(args, cfg):
+        return
+    if state.kv_dict.get("audio_play_mode"):
+        return
+    state.kv_dict["audio_play_mode"] = "mic"
+    state.rtp_loopback_monitor = True

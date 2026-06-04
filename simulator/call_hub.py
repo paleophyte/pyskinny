@@ -549,7 +549,7 @@ class CallHub:
                     self.media_hub.mode,
                 )
                 if self.ivr_menu:
-                    self.ivr_menu.on_media_started(call, self.media_hub)
+                    self.ivr_menu.on_media_started(call, self)
             else:
                 logger.warning(
                     "IVR call ref=%s connected but no SimMediaHub (--rtp-sim-peer or --ivr-dn enables tone)",
@@ -633,3 +633,5 @@ class CallHub:
                     ])
 
             logger.info("Call ended ref=%s", call.call_ref)
+            if call.ivr and self.ivr_menu:
+                self.ivr_menu.on_call_ended(call_ref)

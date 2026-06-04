@@ -6,23 +6,13 @@ from state import PhoneState
 from messages.generic import handle_keypad_press
 import threading
 import logging
+from utils.macro_script import MacroInstruction, parse_macro_script, parse_switch_cases
+
 logger = logging.getLogger(__name__)
 
 
-def _parse_cases(spec: str, labels: dict[str,int]):
-    # print(spec)
-    # print(labels)
-    cases = {}
-    default = None
-    for tok in spec.split(";"):
-        tok = tok.strip()
-        if not tok: continue
-        k, v = tok.split(":")
-        if k.strip().upper() == "DEFAULT":
-            default = labels.get(v.strip().upper())
-        else:
-            cases[k.strip()] = labels.get(v.strip().upper())
-    return cases, default
+def _parse_cases(spec: str, labels: dict[str, int]):
+    return parse_switch_cases(spec, labels)
 
 
 def _strip_quotes(s: str) -> str:
@@ -68,32 +58,6 @@ def sleep_interruptible(seconds: float, stop_event: threading.Event, call_end_ev
             return True
         stop_event.wait(min(0.1, remain))
     return False
-
-
-class MacroInstruction:
-    def __init__(self, command, args=None, label=None):
-        self.command = command
-        self.args = args or []
-        self.label = label
-
-
-def parse_macro_script(script):
-    instructions = []
-    labels = {}
-
-    lines = [line.strip() for line in script.replace(",", "\n").splitlines() if line.strip()]
-    for idx, line in enumerate(lines):
-        if line.endswith(":"):  # label definition
-            label = line[:-1].strip().upper()
-            labels[label] = len(instructions)
-            continue
-
-        parts = line.split()
-        command = parts[0].upper()
-        args = parts[1:]
-        instructions.append(MacroInstruction(command, args))
-
-    return instructions, labels
 
 
 def run_macro(client: SCCPClient, instructions, labels, stop_event: threading.Event):
