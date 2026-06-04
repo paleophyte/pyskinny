@@ -6,7 +6,7 @@ from state import PhoneState
 from messages.generic import handle_keypad_press
 import threading
 import logging
-from utils.macro_script import MacroInstruction, parse_macro_script, parse_switch_cases
+from utils.macro_script import MacroInstruction, parse_macro_script, parse_switch_cases, resolve_macro_value
 from utils.macro_runtime import peek_dtmf_digit, play_prompt_with_barge_in
 
 logger = logging.getLogger(__name__)
@@ -297,9 +297,15 @@ def run_macro(client: SCCPClient, instructions, labels, stop_event: threading.Ev
             client.press_softkey("Resume")
         elif cmd == "TRANSFER":
             if args:
-                client.blind_transfer("".join(args))
+                dest = resolve_macro_value(client.state.kv_dict, " ".join(args))
+                if not dest or dest.startswith("$"):
+                    logger.error("TRANSFER: unresolved destination %r", " ".join(args))
+                else:
+                    client.blind_transfer(dest)
+                    sleep_interruptible(0.5, stop_event, client.events.call_ended)
             else:
                 client.press_softkey("Transfer")
+                sleep_interruptible(0.5, stop_event, client.events.call_ended)
         elif cmd == "END":
             client.press_softkey("EndCall")
         elif cmd == "PLAY":

@@ -247,6 +247,12 @@ def dialed_number(number: str, line: int = 1, call_ref: int = 0) -> bytes:
     return pack_message(0x011D, body)
 
 
+def keypad_button(button: int, line: int = 1, call_ref: int = 0) -> bytes:
+    from simulator.protocol import pack_message
+
+    return pack_message(0x0003, struct.pack("<III", button, line, call_ref))
+
+
 # CUCM pass-through party id seen on 7912 legacy media (OpenRx / StartMedia / Ack).
 PASS_THROUGH_PARTY_ID = 0x01000101
 

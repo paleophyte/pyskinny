@@ -31,6 +31,16 @@ def keypad_to_char(code: int) -> str | None:
     return None
 
 
+def char_to_keypad_code(ch: str) -> int | None:
+    if len(ch) == 1 and ch.isdigit():
+        return int(ch)
+    if ch == "*":
+        return 0x0E
+    if ch == "#":
+        return 0x0F
+    return None
+
+
 def ip_to_le_int(ip: str) -> int:
     return struct.unpack("<I", socket.inet_aton(ip))[0]
 
@@ -148,6 +158,25 @@ class CallHub:
                     call.transfer_digits, line=call.line, call_ref=call.call_ref
                 )
             )
+            return
+
+        if call.state == "connected" and not (call.ivr and call.ivr_menu_active):
+            code = char_to_keypad_code(digit)
+            if code is None:
+                return
+            targets: list[SkinnySession] = []
+            if caller is call.caller and call.callee:
+                targets.append(call.callee)
+            elif caller is call.callee and call.caller:
+                targets.append(call.caller)
+            targets.append(caller)
+            seen: set[int] = set()
+            for party in targets:
+                pid = id(party)
+                if pid in seen:
+                    continue
+                seen.add(pid)
+                party.send(payloads.keypad_button(code, call.line, call.call_ref))
             return
 
         if call.state != "dialing":

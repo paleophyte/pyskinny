@@ -2,7 +2,12 @@
 
 from pathlib import Path
 
-from utils.macro_script import parse_macro_script, parse_switch_cases
+from utils.macro_script import (
+    expand_macro_vars,
+    parse_macro_script,
+    parse_switch_cases,
+    resolve_macro_value,
+)
 from utils.macro_runtime import play_prompt_with_barge_in, wav_duration_sec
 
 
@@ -28,6 +33,19 @@ def test_parse_switch_cases():
     assert cases["1"] == 10
     assert cases["2"] == 20
     assert default == 30
+
+
+def test_expand_macro_vars():
+    values = {"service_dn": "1001", "extension": "1002"}
+    assert expand_macro_vars(values, "TRANSFER $service_dn") == "TRANSFER 1001"
+    assert expand_macro_vars(values, "$missing") == "$missing"
+
+
+def test_resolve_macro_value():
+    values = {"service_dn": "1001", "extension": "1002"}
+    assert resolve_macro_value(values, "$service_dn") == "1001"
+    assert resolve_macro_value(values, "extension") == "1002"
+    assert resolve_macro_value(values, "1003") == "1003"
 
 
 def test_ivr_barge_in_stops_playback():

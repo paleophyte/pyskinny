@@ -136,6 +136,17 @@ def test_macro_hold_and_resume(mock_softkey, _logger):
 
 
 @patch("ui.macro_cli.logger")
+@patch("client.SCCPClient.blind_transfer")
+def test_macro_transfer_with_kv_variable(mock_blind, _logger):
+    client = _make_client()
+    client.state.kv_dict["service_dn"] = "1002"
+    stop = threading.Event()
+    instructions, _ = parse_macro_script("TRANSFER $service_dn, END")
+    run_macro(client, instructions, {}, stop)
+    mock_blind.assert_called_once_with("1002")
+
+
+@patch("ui.macro_cli.logger")
 @patch("client.handle_softkey_press")
 @patch("client.handle_keypad_press")
 def test_macro_transfer_with_number(mock_keypad, mock_softkey, _logger):

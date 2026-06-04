@@ -1,5 +1,10 @@
-# Callee (IVR)
+# Callee IVR — run with examples/run_macro.py (RTP TX needed for PLAY prompts)
 ON_DISCONNECT GOTO TOP
+
+# Lab destination DNs (sim: adjust to match --dn-start assignments on other phones)
+SET service_dn=1001
+SET support_dn=1002
+
 TOP:
 WAIT_CALL 0 RING
 SOFTKEY Answer
@@ -12,20 +17,17 @@ SWITCH last_digit 1:SERVICE;2:SUPPORT;3:EXT_DIAL;9:MENU;DEFAULT:MENU
 
 SERVICE:
 PLAY media/customer_service.wav
-# Should be a transfer sequence
-WAIT_DIGIT 0
-GOTO MENU
+TRANSFER $service_dn
+GOTO TOP
 
 SUPPORT:
 PLAY media/technical_support.wav
-# Should be a transfer sequence
-WAIT_DIGIT 0
-GOTO MENU
+TRANSFER $support_dn
+GOTO TOP
 
 EXT_DIAL:
 PLAY media/extension_dial.wav
 GETDIGITS extension 4 0
-# Should be a transfer sequence
-GOTO MENU
-
+IF_EQ extension "" MENU
+TRANSFER extension
 GOTO TOP

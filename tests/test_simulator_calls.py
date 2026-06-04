@@ -124,6 +124,33 @@ def test_two_phones_hold_and_resume(sim_server):
         assert state_b.is_unregistered.wait(timeout=10)
 
 
+def test_connected_keypad_relays_to_callee(sim_server):
+    """Caller Skinny keypad during a connected call (for callee macro WAIT_DIGIT)."""
+    sim, host, port = sim_server
+
+    client_a, state_a = _register_client(host, port, "AABBCCDDEE08")
+    client_b, state_b = _register_client(host, port, "AABBCCDDEE09")
+    dn_b = sim.registry.get(state_b.device_name)
+
+    try:
+        _dial(client_a, dn_b)
+        assert client_b.events.call_ringing.wait(timeout=10)
+        client_b.press_softkey("Answer")
+        assert client_a.events.call_connected.wait(timeout=10)
+        assert client_b.events.call_connected.wait(timeout=10)
+
+        handle_keypad_press(client_a, 1, 1)
+        time.sleep(0.3)
+
+        ch = client_b.wait_for_digit(timeout=1.0)
+        assert ch == "1"
+    finally:
+        client_a.stop()
+        client_b.stop()
+        state_a.is_unregistered.wait(timeout=10)
+        state_b.is_unregistered.wait(timeout=10)
+
+
 def test_simulator_blind_transfer(sim_server):
     sim, host, port = sim_server
 
