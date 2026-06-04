@@ -87,9 +87,22 @@ class SCCPClient:
         self.connect()
         self._send_register()
 
+    def _end_calls_before_unregister(self) -> None:
+        attempts = max(3, len(self.state.active_calls_list or []) + 1)
+        for _ in range(attempts):
+            if not self.state.active_calls_list and not self.state.call_active:
+                break
+            try:
+                self.press_softkey("EndCall")
+            except Exception:
+                pass
+            time.sleep(0.35)
+
     def stop(self):
-        self.running = False
-        self._stop_event.set()
+        try:
+            self._end_calls_before_unregister()
+        except Exception:
+            pass
 
         try:
             from messages.phone import _teardown_local_media
@@ -101,11 +114,19 @@ class SCCPClient:
         except Exception:
             pass
 
+        # Unregister while recv/keepalive threads are still running so UnregisterAck is handled.
         self._close_skinny_socket(send_unregister=True)
+
+        self.running = False
+        self._stop_event.set()
 
         for t in self._threads:
             if t.is_alive():
                 t.join(timeout=1.5)
+
+        if self.state.is_registered.is_set():
+            self.state.is_registered.clear()
+        self.state.is_unregistered.set()
 
         try:
             self.audio.close()
@@ -199,7 +220,7 @@ class SCCPClient:
             try:
                 if send_unregister and self.state.is_registered.is_set():
                     self._send_unregister()
-                    self.state.is_unregistered.wait(timeout=2.0)
+                    self.state.is_unregistered.wait(timeout=5.0)
             except Exception:
                 pass
             try:

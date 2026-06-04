@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import socket
 import struct
+import urllib.parse
 import urllib.request
 
 from simulator.admin_http import start_admin_http
@@ -87,6 +89,88 @@ def test_admin_restart_sends_skinny_message():
             body = json.loads(resp.read())
             assert body["ok"] is True
         assert _msg_id(session.sent[-1]) == 0x0030
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_admin_bulk_restart_selected_devices():
+    port = _free_port()
+    hub = CallHub()
+    reg = DeviceRegistry(dn_start=1000)
+    reg.assign("SEP111122223333")
+    reg.assign("SEP444455556666")
+    session_a = _fake_session("SEP111122223333", "1000")
+    session_b = _fake_session("SEP444455556666", "1001")
+    hub.register_session(session_a)
+    hub.register_session(session_b)
+
+    server = start_admin_http(
+        "127.0.0.1",
+        port,
+        hub=hub,
+        registry=reg,
+        server_name="TestSim",
+    )
+    try:
+        body = urllib.parse.urlencode(
+            [
+                ("action", "restart"),
+                ("device", "SEP111122223333"),
+                ("device", "SEP444455556666"),
+            ]
+        ).encode()
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/bulk",
+            data=body,
+            method="POST",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            payload = json.loads(resp.read())
+        assert payload["ok"] is True
+        assert payload["message"] == "restart: 2/2 succeeded"
+        assert len(payload["results"]) == 2
+        assert _msg_id(session_a.sent[-1]) == 0x0030
+        assert _msg_id(session_b.sent[-1]) == 0x0030
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_admin_bulk_requires_selection():
+    port = _free_port()
+    hub = CallHub()
+    reg = DeviceRegistry()
+    server = start_admin_http(
+        "127.0.0.1",
+        port,
+        hub=hub,
+        registry=reg,
+        server_name="TestSim",
+    )
+    try:
+        body = urllib.parse.urlencode([("action", "restart")]).encode()
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/bulk",
+            data=body,
+            method="POST",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        )
+        try:
+            urllib.request.urlopen(req, timeout=3)
+            assert False, "expected HTTPError"
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 400
+            payload = json.loads(exc.read())
+            assert payload["ok"] is False
+            assert payload["message"] == "no phones selected"
     finally:
         server.shutdown()
         server.server_close()

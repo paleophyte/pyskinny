@@ -8,7 +8,7 @@ import logging
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import TYPE_CHECKING, Callable
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 if TYPE_CHECKING:
     from simulator.call_hub import CallHub
@@ -18,6 +18,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _ProvisionFn = Callable[[str], str]
+
+_BULK_ACTIONS = (
+    ("restart", "Restart"),
+    ("reset", "Reset"),
+    ("end-call", "End call"),
+    ("provision", "Re-provision TFTP"),
+)
 
 
 class _AdminContext:
@@ -37,40 +44,65 @@ class _AdminContext:
         self.server_name = server_name
 
 
+def _bulk_action_bar(*, disabled_provision: bool) -> str:
+    buttons = []
+    for value, label in _BULK_ACTIONS:
+        extra = ' disabled title="TFTP disabled"' if value == "provision" and disabled_provision else ""
+        buttons.append(
+            f'<button type="submit" name="action" value="{value}"{extra}>{label}</button>'
+        )
+    return (
+        '<div class="bulk-bar">'
+        '<label class="select-all"><input type="checkbox" id="select-all"> Select all</label> '
+        + " ".join(buttons)
+        + "</div>"
+    )
+
+
+def _phone_row(phone: dict) -> str:
+    dev = html.escape(phone["device"])
+    dn = html.escape(phone["dn"] or "—")
+    ip = html.escape(phone["ip"])
+    state = html.escape(phone["call_state"])
+    return (
+        f"<tr>"
+        f'<td><input type="checkbox" name="device" value="{dev}" class="device-cb"></td>'
+        f"<td><code>{dev}</code></td>"
+        f"<td>{dn}</td>"
+        f"<td>{ip}</td>"
+        f"<td>{state}</td>"
+        f"<td>"
+        f'<form method="post" action="/phones/{dev}/restart" style="display:inline">'
+        f'<button type="submit">Restart</button></form> '
+        f'<form method="post" action="/phones/{dev}/reset" style="display:inline">'
+        f'<button type="submit">Reset</button></form> '
+        f'<form method="post" action="/phones/{dev}/end-call" style="display:inline">'
+        f'<button type="submit"{" disabled" if not phone["in_call"] else ""}>End call</button></form>'
+        f"</td>"
+        f"</tr>"
+    )
+
+
 def _admin_page(ctx: _AdminContext) -> bytes:
     phones = ctx.hub.snapshot_sessions()
-    assigned = ctx.registry.snapshot()
-    rows = []
-    for phone in phones:
-        dev = html.escape(phone["device"])
-        dn = html.escape(phone["dn"] or "—")
-        ip = html.escape(phone["ip"])
-        state = html.escape(phone["call_state"])
-        rows.append(
-            f"<tr>"
-            f"<td><code>{dev}</code></td>"
-            f"<td>{dn}</td>"
-            f"<td>{ip}</td>"
-            f"<td>{state}</td>"
-            f"<td>"
-            f'<form method="post" action="/phones/{dev}/restart" style="display:inline">'
-            f'<button type="submit">Restart</button></form> '
-            f'<form method="post" action="/phones/{dev}/reset" style="display:inline">'
-            f'<button type="submit">Reset</button></form> '
-            f'<form method="post" action="/phones/{dev}/end-call" style="display:inline">'
-            f'<button type="submit"{" disabled" if not phone["in_call"] else ""}>End call</button></form>'
-            f"</td>"
-            f"</tr>"
-        )
+    disabled_provision = ctx.provision is None
+    bulk_bar = _bulk_action_bar(disabled_provision=disabled_provision)
+    rows = [_phone_row(phone) for phone in phones]
 
+    assigned = ctx.registry.snapshot()
     provision_rows = []
     for device, dn in sorted(assigned.items()):
         dev = html.escape(device)
         provision_rows.append(
             f"<tr><td><code>{dev}</code></td><td>{html.escape(dn)}</td>"
             f'<td><form method="post" action="/phones/{dev}/provision" style="display:inline">'
-            f'<button type="submit">Re-provision TFTP</button></form></td></tr>'
+            f'<button type="submit"{" disabled" if disabled_provision else ""}>'
+            f"Re-provision TFTP</button></form></td></tr>"
         )
+
+    empty_row = (
+        "<tr><td colspan='6'><em>No phones registered yet.</em></td></tr>"
+    )
 
     body = f"""<!DOCTYPE html>
 <html lang="en">
@@ -79,29 +111,50 @@ def _admin_page(ctx: _AdminContext) -> bytes:
 <title>{html.escape(ctx.server_name)} — phones</title>
 <meta http-equiv="refresh" content="5">
 <style>
-body {{ font-family: system-ui, sans-serif; margin: 1.5rem; max-width: 960px; }}
+body {{ font-family: system-ui, sans-serif; margin: 1.5rem; max-width: 1080px; }}
 table {{ border-collapse: collapse; margin: 1rem 0; width: 100%; }}
 th, td {{ border: 1px solid #ccc; padding: 0.4rem 0.7rem; text-align: left; }}
 th {{ background: #f4f4f4; }}
 button {{ cursor: pointer; margin: 0 0.15rem 0.15rem 0; }}
+button:disabled {{ cursor: not-allowed; opacity: 0.55; }}
 code {{ font-size: 0.95em; }}
 h2 {{ margin-top: 2rem; }}
 .note {{ color: #444; font-size: 0.95rem; line-height: 1.45; }}
+.bulk-bar {{ margin: 0.75rem 0; padding: 0.6rem 0.75rem; background: #f8f8f8; border: 1px solid #ddd; border-radius: 4px; }}
+.select-all {{ margin-right: 0.75rem; font-weight: 600; }}
+.flash {{ padding: 0.5rem 0.75rem; margin: 0.75rem 0; background: #eef6ee; border: 1px solid #b8d8b8; border-radius: 4px; }}
+.flash-warn {{ background: #fff8e6; border-color: #e6d08a; }}
 </style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {{
+  var master = document.getElementById('select-all');
+  if (!master) return;
+  master.addEventListener('change', function() {{
+    document.querySelectorAll('input.device-cb').forEach(function(cb) {{
+      cb.checked = master.checked;
+    }});
+  }});
+}});
+</script>
 </head>
 <body>
 <h1>{html.escape(ctx.server_name)} — registered phones</h1>
 <p class="note">
 <strong>Restart</strong> (CUCM soft): closes SCCP, re-fetches TFTP config, re-registers — usually seconds.<br>
-<strong>Reset</strong> (CUCM hard): full phone reboot cycle (network + TFTP + register) — slower on hardware.
+<strong>Reset</strong> (CUCM hard): full phone reboot cycle (network + TFTP + register) — slower on hardware.<br>
+Select phones with the checkboxes, then use bulk actions above or below the table. Per-row buttons still work.<br>
 Auto-refreshes every 5s. <a href="/api/phones">JSON</a>
 </p>
+<form method="post" action="/bulk">
+{bulk_bar}
 <table>
-<thead><tr><th>Device</th><th>DN</th><th>IP</th><th>Call</th><th>Actions</th></tr></thead>
+<thead><tr><th></th><th>Device</th><th>DN</th><th>IP</th><th>Call</th><th>Actions</th></tr></thead>
 <tbody>
-{"".join(rows) if rows else "<tr><td colspan='5'><em>No phones registered yet.</em></td></tr>"}
+{"".join(rows) if rows else empty_row}
 </tbody>
 </table>
+{bulk_bar}
+</form>
 <h2>DN assignments (TFTP)</h2>
 <table>
 <thead><tr><th>Device</th><th>DN</th><th></th></tr></thead>
@@ -145,6 +198,26 @@ class _AdminHandler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": "admin not ready"})
             return
         path = urlparse(self.path or "").path
+        fields = self._read_form_fields()
+
+        if path == "/bulk":
+            action = (fields.get("action") or [""])[0]
+            devices = fields.get("device") or []
+            ok, msg, results = self._run_bulk_action(ctx, action, devices)
+            accept = self.headers.get("Accept", "")
+            if "application/json" in accept:
+                status = 200 if ok else 400
+                self._send_json(
+                    status,
+                    {"ok": ok, "message": msg, "results": results},
+                )
+                return
+            loc = f"/?msg={quote(msg)}" if ok else f"/?error={quote(msg)}"
+            self.send_response(303 if ok else 400)
+            self.send_header("Location", loc)
+            self.end_headers()
+            return
+
         parts = [p for p in path.split("/") if p]
         if len(parts) == 3 and parts[0] == "phones":
             device = unquote(parts[1])
@@ -162,6 +235,13 @@ class _AdminHandler(BaseHTTPRequestHandler):
             return
         self._send_json(404, {"error": "not found"})
 
+    def _read_form_fields(self) -> dict[str, list[str]]:
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        if length <= 0:
+            return {}
+        raw = self.rfile.read(length).decode("utf-8", errors="replace")
+        return parse_qs(raw, keep_blank_values=True)
+
     def _run_action(self, ctx: _AdminContext, device: str, action: str) -> tuple[bool, str]:
         if action == "restart":
             ok = ctx.hub.restart_device(device)
@@ -178,6 +258,37 @@ class _AdminHandler(BaseHTTPRequestHandler):
             dn = ctx.provision(device)
             return True, f"provisioned DN {dn}"
         return False, "unknown action"
+
+    def _run_bulk_action(
+        self,
+        ctx: _AdminContext,
+        action: str,
+        devices: list[str],
+    ) -> tuple[bool, str, list[dict]]:
+        if action not in {a for a, _ in _BULK_ACTIONS}:
+            return False, f"unknown action: {action}", []
+        unique = []
+        seen: set[str] = set()
+        for device in devices:
+            name = device.strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            unique.append(name)
+        if not unique:
+            return False, "no phones selected", []
+
+        results: list[dict] = []
+        ok_count = 0
+        for device in unique:
+            ok, msg = self._run_action(ctx, device, action)
+            results.append({"device": device, "ok": ok, "message": msg})
+            if ok:
+                ok_count += 1
+
+        summary = f"{action}: {ok_count}/{len(unique)} succeeded"
+        logger.info("Admin bulk %s on %s device(s) — %s", action, len(unique), summary)
+        return True, summary, results
 
     def _send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload).encode("utf-8")
@@ -221,7 +332,7 @@ def start_admin_http(
     )
     thread.start()
     logger.info(
-        "Simulator admin UI http://%s:%s/ (Reset, Restart, end-call, provision)",
+        "Simulator admin UI http://%s:%s/ (Reset, Restart, end-call, provision, bulk)",
         host if host != "0.0.0.0" else "127.0.0.1",
         port,
     )

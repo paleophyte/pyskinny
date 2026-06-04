@@ -124,7 +124,7 @@ def parse_register_ack(client, payload):
 
 @register_handler(0x0027, "UnregisterReq")
 def send_unregister_req(client):
-    if client.state.active_call:
+    if client.state.active_call or client.state.active_calls_list:
         logger.warning(f"({client.state.device_name}) Attempting to Unregister with active call. Ending Call first.")
         client.press_softkey("EndCall")
         time.sleep(0.5)

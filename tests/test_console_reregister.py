@@ -85,7 +85,7 @@ def test_admin_restart_reregisters_connected_client(sim_with_admin):
         assert client.running is True
     finally:
         client.stop()
-        state.is_unregistered.wait(timeout=10)
+        assert state.is_unregistered.wait(timeout=10), f"{state.device_name} failed to unregister"
 
 
 def test_admin_reset_reregisters_connected_client(sim_with_admin):
@@ -113,4 +113,4 @@ def test_admin_reset_reregisters_connected_client(sim_with_admin):
         assert reconnected
     finally:
         client.stop()
-        state.is_unregistered.wait(timeout=10)
+        assert state.is_unregistered.wait(timeout=10), f"{state.device_name} failed to unregister"

@@ -47,6 +47,11 @@ def _register_client(host: str, skinny_port: int, mac: str) -> tuple[SCCPClient,
     return client, state
 
 
+def _stop_client(client: SCCPClient, state: PhoneState) -> None:
+    client.stop()
+    assert state.is_unregistered.wait(timeout=10), f"{state.device_name} failed to unregister"
+
+
 def _dial(client: SCCPClient, number: str) -> None:
     client.press_softkey("NewCall")
     time.sleep(0.25)
@@ -83,10 +88,8 @@ def test_two_phones_register_and_call(sim_server):
         assert str(client_a.state.active_calls_list), "caller has no active call ref"
         assert str(client_b.state.active_calls_list), "callee has no active call ref"
     finally:
-        client_a.stop()
-        client_b.stop()
-        state_a.is_unregistered.wait(timeout=10)
-        state_b.is_unregistered.wait(timeout=10)
+        _stop_client(client_a, state_a)
+        _stop_client(client_b, state_b)
 
 
 def test_two_phones_hold_and_resume(sim_server):
@@ -117,14 +120,9 @@ def test_two_phones_hold_and_resume(sim_server):
         assert client_b.state.calls[ref]["call_state"] == 5
         assert client_a.events.call_connected.wait(timeout=10)
         assert client_b.events.call_connected.wait(timeout=10)
-
-        client_a.press_softkey("EndCall")
-        time.sleep(0.5)
     finally:
-        client_a.stop()
-        client_b.stop()
-        state_a.is_unregistered.wait(timeout=10)
-        state_b.is_unregistered.wait(timeout=10)
+        _stop_client(client_a, state_a)
+        _stop_client(client_b, state_b)
 
 
 def test_second_call_while_on_hold(sim_server):
@@ -166,16 +164,10 @@ def test_second_call_while_on_hold(sim_server):
         assert client_a.state.calls[ref_ab]["call_state"] == 5
         assert client_b.state.calls[ref_ab]["call_state"] == 5
         assert client_a.events.call_connected.wait(timeout=10)
-
-        client_a.press_softkey("EndCall")
-        time.sleep(0.5)
     finally:
-        client_a.stop()
-        client_b.stop()
-        client_c.stop()
-        state_a.is_unregistered.wait(timeout=10)
-        state_b.is_unregistered.wait(timeout=10)
-        state_c.is_unregistered.wait(timeout=10)
+        _stop_client(client_a, state_a)
+        _stop_client(client_b, state_b)
+        _stop_client(client_c, state_c)
 
 
 def test_connected_keypad_relays_to_callee(sim_server):
@@ -199,10 +191,8 @@ def test_connected_keypad_relays_to_callee(sim_server):
         ch = client_b.wait_for_digit(timeout=1.0)
         assert ch == "1"
     finally:
-        client_a.stop()
-        client_b.stop()
-        state_a.is_unregistered.wait(timeout=10)
-        state_b.is_unregistered.wait(timeout=10)
+        _stop_client(client_a, state_a)
+        _stop_client(client_b, state_b)
 
 
 def test_simulator_blind_transfer(sim_server):
@@ -234,12 +224,9 @@ def test_simulator_blind_transfer(sim_server):
         assert client_b.events.call_connected.wait(timeout=10), "transferred party not connected"
         assert client_c.events.call_connected.wait(timeout=10), "transfer target not connected"
     finally:
-        client_a.stop()
-        client_b.stop()
-        client_c.stop()
-        state_a.is_unregistered.wait(timeout=10)
-        state_b.is_unregistered.wait(timeout=10)
-        state_c.is_unregistered.wait(timeout=10)
+        _stop_client(client_a, state_a)
+        _stop_client(client_b, state_b)
+        _stop_client(client_c, state_c)
 
 
 def test_simulator_auto_answer_connects_without_manual_answer():
@@ -265,8 +252,6 @@ def test_simulator_auto_answer_connects_without_manual_answer():
         assert client_a.events.call_connected.wait(timeout=10), "caller not connected"
         assert client_b.events.call_connected.wait(timeout=10), "callee not connected (auto-answer)"
     finally:
-        client_a.stop()
-        client_b.stop()
+        _stop_client(client_a, state_a)
+        _stop_client(client_b, state_b)
         sim.stop()
-        state_a.is_unregistered.wait(timeout=10)
-        state_b.is_unregistered.wait(timeout=10)
