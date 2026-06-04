@@ -64,7 +64,7 @@
 <idleURL>http://10.102.172.11:8088/CCMCIP/idle.asp</idleURL>
 <informationURL>http://10.102.172.11:8088/CCMCIP/GetTelecasterHelpText.asp</informationURL>
 <messagesURL>http://10.102.172.11:8088/CCMCIP/messages.asp</messagesURL>
-<proxyServerURL>http://10.102.172.11:8088/CCMCIP/proxy.asp</proxyServerURL>
+<proxyServerURL></proxyServerURL>
 <servicesURL>http://10.102.172.11:8088/CCMCIP/getservicesmenu.asp</servicesURL>
 <dscpForCm2Dvce>96</dscpForCm2Dvce>
 <dscpForSCCPPhoneConfig>96</dscpForSCCPPhoneConfig>

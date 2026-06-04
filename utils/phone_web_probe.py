@@ -64,9 +64,8 @@ def main(argv: list[str] | None = None) -> int:
         "That does not prove CGI is disabled — test /CGI/* below."
     )
     print(
-        "webAccess in SEP*.cnf.xml: CUCM often stores 0 when the admin checkbox is ON "
-        "(not a simple 0=off boolean). Legacy web enable is usually in gk* TFTP profiles "
-        "(OpFlags bit 7 clear = web allowed)."
+        "webAccess: 0=enabled, 1=DISABLED, 2=read-only (chan-sccp / CUCM convention). "
+        "If HTTP died after editing config, you likely set webAccess=1."
     )
 
     _probe(host, "/", auth=auth)

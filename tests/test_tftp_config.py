@@ -121,6 +121,7 @@ def test_patch_cucm_sep_preserves_load_and_adds_line():
     assert "CP7912060000SCCP050124A" in patched
     assert "<processNodeName>10.102.172.11</processNodeName>" in patched
     assert "http://10.102.172.11:8088/CCMCIP/authenticate.asp" in patched
+    assert "<proxyServerURL></proxyServerURL>" in patched
     assert "<webAccess>0</webAccess>" in patched
     assert "<lines>" in patched
     assert "<name>1000</name>" in patched

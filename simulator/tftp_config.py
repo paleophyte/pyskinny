@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from xml.sax.saxutils import escape
+
+logger = logging.getLogger(__name__)
 
 _CUCM_URL_PATHS = {
     "authenticationURL": "authenticate.asp",
@@ -12,7 +15,6 @@ _CUCM_URL_PATHS = {
     "servicesURL": "getservicesmenu.asp",
     "idleURL": "idle.asp",
     "messagesURL": "messages.asp",
-    "proxyServerURL": "proxy.asp",
 }
 
 
@@ -53,8 +55,8 @@ def patch_sep_config_for_sim(
             count=1,
         )
 
-    # Do not rewrite webAccess: on CUCM, 0 often means enabled (7912 ignores this tag
-    # for CGI anyway — see README / utils.phone_web_probe; gk* profile OpFlags bit 7).
+    # No proxy.asp stub — a non-empty proxyServerURL breaks local HTTP/CGI on 7912-class phones.
+    text = re.sub(r"<proxyServerURL>[^<]*</proxyServerURL>", "<proxyServerURL></proxyServerURL>", text)
 
 
     if "<lines>" not in text and "</device>" in text:
@@ -71,6 +73,12 @@ def patch_sep_config_for_sim(
   </lines>
 """
         text = text.replace("</device>", lines + "</device>", 1)
+
+    if re.search(r"<webAccess>1</webAccess>", text):
+        logger.warning(
+            "SEP config contains webAccess=1 (HTTP/CGI disabled on most Cisco phones). "
+            "Use webAccess=0 to enable web; phone must TFTP reload + reboot.",
+        )
 
     return text
 
