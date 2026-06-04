@@ -545,6 +545,16 @@ python -m utils.phone_remote keys 1001
 python -m utils.phone_remote interactive
 ```
 
+**Web UI** — browser-based remote control with live LCD refresh when `/CGI/Screenshot` works:
+
+```bash
+python -m examples.run_phone_web
+# open http://127.0.0.1:8765/
+# or: pyskinny-phone-web --host 0.0.0.0   # LAN access (lab only)
+```
+
+Enter the phone IP and web credentials, click **Probe** — softkeys/keypad enable when `/CGI/Execute` works even if screenshots are unavailable.
+
 **7912 + `phone_remote`:** The embedded web server is not a normal home page on port 80. `curl http://<phone>/` often yields *empty reply* even when CGI push works. Use `phone_web_probe` to test `/CGI/Screenshot` and `/CGI/Execute`. On CUCM, `<webAccess>0</webAccess>` in `SEP*.cnf.xml` is normal when the admin “Web Access” checkbox is checked (0 = enabled, 1 = disabled). **Clear `<proxyServerURL></proxyServerURL>`** in the sim TFTP config — a proxy URL breaks local HTTP/CGI on 7912-class phones (the simulator patches this automatically). XML push auth goes to the simulator’s `authenticate.asp`, which must return plain `AUTHORIZED` (not XML).
 
 On register, the simulator log should show `legacy` for a 7912 (`type=0x7537`). New Call should log `outbound dial ... tone=33 (0x21) legacy=True` matching CUCM (`cm_cap.pcapng`: SetRinger → SetSpeakerMode → SetLamp → CallState OffHook → SelectSoftKeys → DisplayPromptStatus → ActivateCallPlane → StartTone tone 33 dir 0).
@@ -577,8 +587,8 @@ See also [docs/lab-cookbook.md](docs/lab-cookbook.md) for the current simulator 
 **Later**
 - [x] Conference (sim + client)
 - [x] Consulted transfer (sim + client)
+- [x] Mini web UI for phone remote control / screenshots
 - [ ] CM2 CallInfo / synthetic ref hardening (when CM2 lab available)
-- [ ] Optional mini web UI for phone remote control
 - [ ] SIP phone support
 
 ---

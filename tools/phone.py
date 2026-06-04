@@ -1,3 +1,4 @@
+import io
 import os
 import time
 import requests
@@ -93,6 +94,102 @@ def fetch_screenshot(
             f.write(data)
         return data, ext, path
     return data, ext, None
+
+
+class ScreenshotNotSupportedError(RuntimeError):
+    """Phone HTTP works but /CGI/Screenshot is missing or not decodable."""
+
+
+def fetch_screenshot_png_bytes(
+    ip,
+    auth=None,
+    use_https=False,
+    try_https_fallback=False,
+    port: int | None = None,
+    timeout=6,
+    verify=False,
+) -> bytes:
+    """Return PNG bytes from /CGI/Screenshot (raw PNG or CiscoIPPhoneImage XML)."""
+    try:
+        data, ext, _ = fetch_screenshot(
+            ip,
+            auth=auth,
+            use_https=use_https,
+            try_https_fallback=try_https_fallback,
+            port=port,
+            timeout=timeout,
+            verify=verify,
+        )
+    except RuntimeError as exc:
+        raise ScreenshotNotSupportedError(str(exc)) from exc
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return data
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ScreenshotNotSupportedError(
+            f"screenshot response is not PNG or XML (ext={ext})"
+        ) from exc
+    if "<" not in text:
+        raise ScreenshotNotSupportedError(
+            "screenshot endpoint did not return PNG or CiscoIPPhoneImage XML"
+        )
+    img = decode_cisco_screenshot(text, reverse_bits=True, reverse_bytes=False, flip_horizontal=False)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def probe_phone_http(
+    ip,
+    auth=None,
+    use_https=False,
+    try_https_fallback=False,
+    port: int | None = None,
+    timeout=4,
+    verify=False,
+) -> dict:
+    """
+    Probe /CGI/Screenshot and /CGI/Execute without leaving the phone off-hook.
+    Returns {"screenshot": bool, "execute": bool, "errors": {...}}.
+    """
+    result: dict = {"screenshot": False, "execute": False, "errors": {}}
+    try:
+        fetch_screenshot_png_bytes(
+            ip,
+            auth=auth,
+            use_https=use_https,
+            try_https_fallback=try_https_fallback,
+            port=port,
+            timeout=timeout,
+            verify=verify,
+        )
+        result["screenshot"] = True
+    except PermissionError as exc:
+        result["errors"]["screenshot"] = str(exc)
+    except Exception as exc:
+        result["errors"]["screenshot"] = str(exc)
+
+    try:
+        _execute(
+            ip,
+            ["Key:Services"],
+            auth,
+            use_https=use_https,
+            try_https_fallback=try_https_fallback,
+            port=port,
+            timeout=timeout,
+            verify=verify,
+        )
+        result["execute"] = True
+    except PermissionError as exc:
+        # Endpoint responded; credentials may be wrong but remote control path exists.
+        result["execute"] = True
+        result["errors"]["execute_auth"] = str(exc)
+    except Exception as exc:
+        result["errors"]["execute"] = str(exc)
+
+    return result
 
 
 def _guess_image_ext(data, content_type=None):
