@@ -26,6 +26,29 @@ def main():
         action="store_true",
         help="With --rtp-loopback, also play received RTP on the local speaker",
     )
+    parser.add_argument(
+        "--rtp-tone",
+        action="store_true",
+        help="Send a continuous test tone on RTP TX instead of silence",
+    )
+    parser.add_argument(
+        "--rtp-tone-hz",
+        type=float,
+        default=None,
+        metavar="HZ",
+        help="Test tone frequency in Hz (default: 1000)",
+    )
+    parser.add_argument(
+        "--rtp-record",
+        action="store_true",
+        help="Record RTP RX/TX to WAV files under logs/rtp/",
+    )
+    parser.add_argument(
+        "--rtp-record-dir",
+        default=None,
+        metavar="DIR",
+        help="Directory for RTP recordings (default: logs/rtp)",
+    )
     parser.add_argument("-v", "--verbose", action="count", default=0,
                         help="Increase output verbosity (-v = warning, -vv = message, -vvv = info, -vvvv = debug)")
     args = parser.parse_args()

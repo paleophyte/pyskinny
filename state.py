@@ -144,8 +144,13 @@ class PhoneState:
         self._rtp_tx = None
         self._rtp_rx = None
         self._rtp_echo_source = None
+        self._rtp_recorder = None
         self.rtp_loopback = False
         self.rtp_loopback_monitor = False
+        self.rtp_tone = False
+        self.rtp_tone_hz = 1000.0
+        self.rtp_record = False
+        self.rtp_record_dir = "logs/rtp"
 
         # Key Value storage
         self.kv_dict = {}
@@ -353,3 +358,21 @@ def apply_media_options(state: PhoneState, args, cfg: dict | None) -> None:
         state.rtp_loopback = True
     if getattr(args, "rtp_loopback_monitor", False):
         state.rtp_loopback_monitor = True
+    if cfg and cfg.get("rtp_tone"):
+        state.rtp_tone = True
+    if getattr(args, "rtp_tone", False):
+        state.rtp_tone = True
+    if cfg and cfg.get("rtp_tone_hz") is not None:
+        state.rtp_tone_hz = float(cfg["rtp_tone_hz"])
+    hz = getattr(args, "rtp_tone_hz", None)
+    if hz is not None:
+        state.rtp_tone_hz = float(hz)
+    if cfg and cfg.get("rtp_record"):
+        state.rtp_record = True
+    if getattr(args, "rtp_record", False):
+        state.rtp_record = True
+    if cfg and cfg.get("rtp_record_dir"):
+        state.rtp_record_dir = str(cfg["rtp_record_dir"])
+    record_dir = getattr(args, "rtp_record_dir", None)
+    if record_dir:
+        state.rtp_record_dir = str(record_dir)

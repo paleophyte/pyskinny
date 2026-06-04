@@ -7,22 +7,86 @@ from utils.call_management import CALL_STATE_NAMES
 from utils.call_management import update_call_state, mark_call_ended, mark_call_connected, next_synthetic_call_reference
 from utils.client import get_local_ip, ip_to_int, _keypad_code_to_char
 from audio_worker import RTPReceiver, RTPSender, wire_rtp_loopback, socket
+from utils.rtp_record import RTPRecorder, rtp_record_base_path
 import logging
 logger = logging.getLogger(__name__)
+
+
+def _truthy(val) -> bool:
+    return str(val).lower() in ("1", "true", "yes", "on")
 
 
 def _rtp_loopback_enabled(client) -> bool:
     kv = client.state.kv_dict.get("rtp_loopback")
     if kv is not None:
-        return str(kv).lower() in ("1", "true", "yes", "on")
+        return _truthy(kv)
     return bool(getattr(client.state, "rtp_loopback", False))
 
 
 def _rtp_loopback_monitor(client) -> bool:
     kv = client.state.kv_dict.get("rtp_loopback_monitor")
     if kv is not None:
-        return str(kv).lower() in ("1", "true", "yes", "on")
+        return _truthy(kv)
     return bool(getattr(client.state, "rtp_loopback_monitor", False))
+
+
+def _rtp_record_enabled(client) -> bool:
+    kv = client.state.kv_dict.get("rtp_record")
+    if kv is not None:
+        return _truthy(kv)
+    return bool(getattr(client.state, "rtp_record", False))
+
+
+def _rtp_tone_hz(client) -> float:
+    kv = client.state.kv_dict.get("rtp_tone_hz")
+    if kv is not None:
+        try:
+            return float(kv)
+        except (TypeError, ValueError):
+            pass
+    return float(getattr(client.state, "rtp_tone_hz", 1000.0))
+
+
+def _effective_play_mode(client) -> str:
+    kv = client.state.kv_dict.get("audio_play_mode")
+    if kv is not None:
+        return str(kv)
+    if getattr(client.state, "rtp_tone", False):
+        return "tone"
+    return "silent"
+
+
+def _start_rtp_recorder(client, call_ref: int) -> RTPRecorder | None:
+    if not _rtp_record_enabled(client):
+        return None
+    existing = getattr(client.state, "_rtp_recorder", None)
+    if existing is not None and not existing.closed:
+        return existing
+    base = rtp_record_base_path(client.state, call_ref)
+    rec = RTPRecorder(base, sr=8000, log=client.logger)
+    client.state._rtp_recorder = rec
+    client.logger.info("[RTP record] started base=%s", base)
+    return rec
+
+
+def _stop_rtp_recorder(client) -> None:
+    rec = getattr(client.state, "_rtp_recorder", None)
+    if rec is None:
+        return
+    rec.close()
+    client.state._rtp_recorder = None
+
+
+def _attach_recorder_to_media(client, call_ref: int) -> None:
+    rec = _start_rtp_recorder(client, call_ref)
+    if rec is None:
+        return
+    rx = client.state._rtp_rx
+    tx = client.state._rtp_tx
+    if rx is not None:
+        rx.attach_recorder(rec)
+    if tx is not None:
+        tx.attach_recorder(rec)
 
 
 def _rtp_play_worker(client):
@@ -44,14 +108,18 @@ def _configure_rtp_sender(client, tx: RTPSender) -> None:
         logger.info("[RTP] loopback echo enabled -> %s:%s", tx.addr[0], tx.addr[1])
         return
 
-    play_mode = client.state.kv_dict.get("audio_play_mode", "silent")
+    play_mode = _effective_play_mode(client)
     if play_mode in ["silent", "silence"]:
         logger.debug("RTP Sending mode: Silence")
     elif play_mode in ["mic", "microphone"]:
         logger.debug("RTP Sending mode: Microphone")
         tx.send_microphone()
+    elif play_mode in ["tone", "test-tone", "testtone"]:
+        hz = _rtp_tone_hz(client)
+        logger.info("RTP Sending mode: test tone %.0f Hz", hz)
+        tx.send_tone(hz)
     else:
-        logger.debug(f"RTP Sending mode: File {play_mode}")
+        logger.debug("RTP Sending mode: File %s", play_mode)
         tx.send_wav(play_mode, loop=True)
 
 
@@ -571,6 +639,7 @@ def parse_start_media_transmission(client, payload):
     _configure_rtp_sender(client, tx)
 
     client.state._rtp_tx = tx
+    _attach_recorder_to_media(client, call_reference)
 
     mark_call_connected(
         client,
@@ -603,6 +672,7 @@ def parse_stop_media_transmission(client, payload):
     if rx:
         rx.detach_echo()
     client.state._rtp_echo_source = None
+    _stop_rtp_recorder(client)
 
     client.state.media_active = False
     client.events.media_started.clear()
@@ -724,10 +794,14 @@ def send_open_receive_channel_ack(client, payload):
     client.state._rtp_rx = rx
     port_number = rx.port
 
+    call_reference = payload["callReference"]
+    rec = _start_rtp_recorder(client, call_reference)
+    if rec is not None:
+        rx.attach_recorder(rec)
+
     call_manager_host_ip = get_local_ip(client.state.server)
     station_ip = ip_to_int(call_manager_host_ip)  # still in int form
     pass_through_party_id = payload["passThroughPartyId"]
-    call_reference = payload["callReference"]
     station_ip_packed = struct.pack("!I", station_ip)  # Big-endian (network byte order)
 
     data = struct.pack(
@@ -768,6 +842,7 @@ def parse_close_receive_channel(client, payload):
         rx.stop()
     client.state._rtp_rx = None
     client.state._rtp_echo_source = None
+    _stop_rtp_recorder(client)
 
     logger.info(f"[RECV] CloseReceiveChannel")
 

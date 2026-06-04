@@ -546,6 +546,7 @@ class RTPReceiver:
         self.source_id = source_id
         self.log = log
         self.echo_source: EchoSource | None = None
+        self.recorder = None
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((bind_ip, port))
         self.sock.settimeout(0.5)
@@ -559,6 +560,9 @@ class RTPReceiver:
     def detach_echo(self) -> None:
         self.echo_source = None
 
+    def attach_recorder(self, recorder) -> None:
+        self.recorder = recorder
+
     def start(self):
         if self.worker is not None:
             self.worker.add_stream(self.source_id, gain_db=0.0)
@@ -571,6 +575,7 @@ class RTPReceiver:
         if self.worker is not None:
             self.worker.remove_stream(self.source_id)
         self.echo_source = None
+        self.recorder = None
 
     def _decode_payload(self, pt: int, payload: bytes) -> np.ndarray:
         if pt == 0:   # PCMU
@@ -605,6 +610,9 @@ class RTPReceiver:
                 echo = self.echo_source
                 if echo is not None:
                     echo.push(pcm)
+                rec = self.recorder
+                if rec is not None:
+                    rec.write_rx(pcm)
                 if self.worker is not None:
                     self.worker.feed_stream(self.source_id, pcm, src_rate=8000)
 
@@ -618,6 +626,25 @@ class _BaseSource:
 class SilenceSource(_BaseSource):
     def __init__(self, sr: int): self.sr = sr
     # read() inherited (zeros)
+
+
+class ToneSource(_BaseSource):
+    """Continuous sine test tone for RTP TX troubleshooting."""
+
+    def __init__(self, sr: int, freq_hz: float = 1000.0, gain_db: float = -12.0):
+        self.sr = sr
+        self.freq_hz = float(freq_hz)
+        self.gain = 10 ** (gain_db / 20.0)
+        self._phase = 0.0
+
+    def read(self, n: int) -> np.ndarray:
+        if n <= 0:
+            return np.zeros(0, dtype=np.float32)
+        idx = np.arange(n, dtype=np.float64) + self._phase
+        out = (self.gain * np.sin(2.0 * np.pi * self.freq_hz * idx / self.sr)).astype(np.float32)
+        self._phase = (self._phase + n) % self.sr
+        return out
+
 
 class WavSource(_BaseSource):
     """Preload a 16-bit PCM wav, downmix to mono, resample if needed, loopable."""
@@ -855,10 +882,14 @@ class RTPSender:
         # source management
         self._src_lock = threading.Lock()
         self._source: _BaseSource = SilenceSource(self.sr)
+        self.recorder = None
 
     # ---- public selection APIs ----
     def send_silence(self):
         self._swap_source(SilenceSource(self.sr))
+
+    def send_tone(self, freq_hz: float = 1000.0, gain_db: float = -12.0):
+        self._swap_source(ToneSource(self.sr, freq_hz=freq_hz, gain_db=gain_db))
 
     def send_wav(self, path: str, loop: bool = False, gain_db: float = 0.0):
         self._swap_source(WavSource(path, target_sr=self.sr, loop=loop, gain_db=gain_db))
@@ -871,6 +902,9 @@ class RTPSender:
 
     def send_echo(self, echo_source: EchoSource):
         self._swap_source(echo_source)
+
+    def attach_recorder(self, recorder) -> None:
+        self.recorder = recorder
 
     def _swap_source(self, new_src: _BaseSource):
         with self._src_lock:
@@ -936,6 +970,9 @@ class RTPSender:
                 take = min(f32.size, samples_per_packet)
                 if take > 0: tmp[:take] = f32[:take]
                 f32 = tmp
+            rec = self.recorder
+            if rec is not None:
+                rec.write_tx(f32)
             # 2) encode -> payload
             payload = self._encode(f32)
             # 3) send
