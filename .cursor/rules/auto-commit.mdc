@@ -1,0 +1,17 @@
+---
+description: Git add and commit after completing code changes in this repo
+alwaysApply: true
+---
+
+# Auto-commit after changes
+
+When you finish a task that modifies tracked files in this repository:
+
+1. Run `git status` and `git diff` to review what changed.
+2. `git add` the relevant files (never secrets like `.env`).
+3. Create a concise commit with a message focused on **why**, following existing repo style.
+4. Run `git status` after commit to confirm a clean working tree.
+
+Skip committing only when the user explicitly says not to, or when the task was question/review-only with no file changes.
+
+Do not push unless the user asks.
