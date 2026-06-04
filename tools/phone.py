@@ -1,6 +1,7 @@
 import os
 import time
 import requests
+from urllib.parse import quote_plus
 from xml.etree import ElementTree as ET
 import argparse
 from PIL import Image
@@ -146,9 +147,16 @@ def _execute(
     urls = _request_urls(
         ip, "/CGI/Execute", use_https=use_https, try_https_fallback=try_https_fallback, port=port
     )
-    r = _try_post(urls, data=body.encode("utf-8"),
-                  headers={"Content-Type": "text/xml"}, auth=auth,
-                  timeout=timeout, verify=verify)
+    # 79xx phones expect form field XML=..., not raw text/xml (see Cisco XML push docs).
+    form_body = "XML=" + quote_plus(body)
+    r = _try_post(
+        urls,
+        data=form_body.encode("utf-8"),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        auth=auth,
+        timeout=timeout,
+        verify=verify,
+    )
     _check_execute_response(r)
     return r
 

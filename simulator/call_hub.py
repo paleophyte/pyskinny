@@ -171,13 +171,18 @@ class CallHub:
         if callee._legacy_phone:
             call.callee.send_many(
                 ring_common
-                + self._legacy_ring_in_packets(call, caller_dn)
+                + [
+                    payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=3),
+                    payloads.legacy_display_text(caller_dn, call.line, call.call_ref),
+                    payloads.display_pri_notify(caller_dn),
+                ]
                 + [
                     payloads.call_info(
                         caller_name, caller_dn, callee_name, callee_dn,
                         line=call.line, call_ref=call.call_ref, call_type=1,
                     ),
                 ]
+                + self._legacy_ring_in_tail(call)
             )
         else:
             call.callee.send_many(
@@ -202,15 +207,13 @@ class CallHub:
             ).start()
 
     @staticmethod
-    def _legacy_ring_in_packets(call: SimCall, caller_dn: str) -> list[bytes]:
-        """7912 ring-in from cm_call_from_pyskinny_to_7912.pcapng frames 132-138."""
+    def _legacy_ring_in_tail(call: SimCall) -> list[bytes]:
         line, ref = call.line, call.call_ref
+        sk = payloads.select_soft_keys(line, ref, softkey_set_index=3)
         return [
-            payloads.select_soft_keys(line, ref, softkey_set_index=3),
-            payloads.legacy_display_text(caller_dn, line, ref),
-            payloads.display_pri_notify(caller_dn),
             payloads.set_lamp(stimulus=9, instance=line, lamp_mode=5),
             payloads.set_ringer(2, 1, line, ref),
+            sk,
         ]
 
     @staticmethod

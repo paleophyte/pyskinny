@@ -108,8 +108,18 @@ def softkey_template_res(*, legacy: bool = False) -> bytes:
 def softkey_set_res(*, legacy: bool = False) -> bytes:
     if legacy:
         from simulator.cucm_legacy_assets import LEGACY_SOFTKEY_SET_RES
+        from simulator.protocol import pack_message
 
-        return normalize_skinny_packet(LEGACY_SOFTKEY_SET_RES)
+        pkt = normalize_skinny_packet(LEGACY_SOFTKEY_SET_RES)
+        body = bytearray(pkt[12:])
+        # CUCM blob set 3 (Ring In) only had EndCall; add Answer for remote softkey use.
+        set_idx = 3
+        off = 12 + set_idx * 48
+        body[off] = 11
+        body[off + 1] = 9
+        struct.pack_into("<H", body, off + 16, 311)
+        struct.pack_into("<H", body, off + 18, 309)
+        return pack_message(0x0109, bytes(body))
     from simulator.protocol import pack_message
 
     # template_index, info_index (see messages/generic.py)

@@ -53,6 +53,8 @@ def patch_sep_config_for_sim(
             count=1,
         )
 
+    text = re.sub(r"<webAccess>\d+</webAccess>", "<webAccess>1</webAccess>", text)
+
     if "<lines>" not in text and "</device>" in text:
         dn = escape(directory_number)
         lines = f"""
