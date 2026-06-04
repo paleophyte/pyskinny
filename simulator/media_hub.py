@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import struct
 import socket
-import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -130,22 +129,22 @@ class SimMediaHub:
             if self.mode == "tone":
                 tx.send_tone(self.tone_hz)
             elif self.mode == "loopback":
-                leg.echo = wire_rtp_loopback(
-                    rx,
-                    tx,
-                    sr=8000,
+                echo = EchoSource(
+                    8000,
                     delay_ms=self.loopback_delay_ms,
                     gain_db=self.loopback_gain_db,
-                    start_tx=self.loopback_preamble_sec <= 0,
                 )
+                leg.echo = echo
+                rx.attach_echo(echo)
                 if self.loopback_preamble_sec > 0:
-                    tx.send_tone(self.tone_hz)
-                    echo = leg.echo
-                    threading.Timer(
-                        self.loopback_preamble_sec,
-                        lambda: tx.send_echo(echo),
-                        name=f"sim-loopback-{call.call_ref}",
-                    ).start()
+                    tx.send_tone_then_echo(
+                        echo,
+                        tone_hz=self.tone_hz,
+                        preamble_sec=self.loopback_preamble_sec,
+                        tone_gain_db=-6.0,
+                    )
+                else:
+                    tx.send_echo(echo)
             # bridge wiring happens after all legs exist
 
         if self.mode == "bridge" and len(sim_session.legs) == 2:

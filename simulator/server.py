@@ -60,6 +60,11 @@ class SkinnySimulator:
                 self.hub.set_auto_answer(target)
         if self._media_hub is not None:
             self._media_hub.tone_hz = rtp_sim_tone_hz
+        if rtp_sim_peer == "loopback":
+            logger.info(
+                "Sim loopback active: client should use "
+                "--rtp-loopback --rtp-loopback-monitor on run_console to send/hear echo"
+            )
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()

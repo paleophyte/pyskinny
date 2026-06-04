@@ -257,12 +257,16 @@ class CallHub:
         import time
 
         time.sleep(0.25)
-        if call.state == "ended":
-            return
+        with self._lock:
+            if call.call_ref not in self._calls:
+                return
         self._connect_ivr(call)
 
     def _connect_ivr(self, call: SimCall) -> None:
         assert self.ivr_dn is not None
+        with self._lock:
+            if call.call_ref not in self._calls:
+                return
         call.state = "connected"
         caller = call.caller
         caller_name = caller.device_name
@@ -592,6 +596,9 @@ class CallHub:
                 self.media_hub.stop_call(call.call_ref)
 
             for party in parties:
+                if call.media_ports:
+                    party.send(payloads.stop_media_transmission(call.call_ref))
+                    party.send(payloads.close_receive_channel(call.call_ref))
                 party.active_call = None
                 party.awaiting_media_ack = False
                 if party._legacy_phone:

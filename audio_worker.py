@@ -654,6 +654,35 @@ class ToneSource(_BaseSource):
         return out
 
 
+class ToneThenEchoSource(_BaseSource):
+    """Play a test tone, then switch to delayed echo (single RTPSender source)."""
+
+    def __init__(
+        self,
+        sr: int,
+        echo: EchoSource,
+        *,
+        tone_hz: float = 1000.0,
+        preamble_sec: float = 2.0,
+        tone_gain_db: float = -6.0,
+    ):
+        self._tone = ToneSource(sr, freq_hz=tone_hz, gain_db=tone_gain_db)
+        self._echo = echo
+        self._preamble_samples = max(0, int(sr * preamble_sec))
+        self._emitted = 0
+
+    def read(self, n: int) -> np.ndarray:
+        if self._emitted < self._preamble_samples:
+            take = min(n, self._preamble_samples - self._emitted)
+            out = np.zeros(n, dtype=np.float32)
+            out[:take] = self._tone.read(take)
+            self._emitted += take
+            if take < n:
+                out[take:] = self._echo.read(n - take)
+            return out
+        return self._echo.read(n)
+
+
 class WavSource(_BaseSource):
     """Preload a 16-bit PCM wav, downmix to mono, resample if needed, loopable."""
     def __init__(self, path: str, target_sr: int, loop: bool = False, gain_db: float = 0.0):
@@ -722,8 +751,14 @@ class EchoSource(_BaseSource):
             self._queued += chunk.size
             max_samples = int(self.sr * self.MAX_QUEUE_MS / 1000) + self._delay_samples
             while self._queued > max_samples and self._buf:
-                dropped = self._buf.popleft()
-                self._queued -= dropped.size
+                excess = self._queued - max_samples
+                first = self._buf[0]
+                if first.size <= excess:
+                    self._buf.popleft()
+                    self._queued -= first.size
+                else:
+                    self._buf[0] = first[excess:]
+                    self._queued -= excess
 
     def read(self, n: int) -> np.ndarray:
         out = np.zeros(n, dtype=np.float32)
@@ -909,6 +944,24 @@ class RTPSender:
 
     def send_tone(self, freq_hz: float = 1000.0, gain_db: float = -12.0):
         self._swap_source(ToneSource(self.sr, freq_hz=freq_hz, gain_db=gain_db))
+
+    def send_tone_then_echo(
+        self,
+        echo_source: EchoSource,
+        *,
+        tone_hz: float = 1000.0,
+        preamble_sec: float = 2.0,
+        tone_gain_db: float = -6.0,
+    ):
+        self._swap_source(
+            ToneThenEchoSource(
+                self.sr,
+                echo_source,
+                tone_hz=tone_hz,
+                preamble_sec=preamble_sec,
+                tone_gain_db=tone_gain_db,
+            )
+        )
 
     def send_wav(self, path: str, loop: bool = False, gain_db: float = 0.0):
         self._swap_source(WavSource(path, target_sr=self.sr, loop=loop, gain_db=gain_db))

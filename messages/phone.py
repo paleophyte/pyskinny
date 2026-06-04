@@ -181,6 +181,24 @@ def _stop_rtp_stats_monitor(client, *, final_log: bool = True) -> None:
     client.state._rtp_stats = None
 
 
+def _teardown_local_media(client) -> None:
+    """Stop client RTP legs when the call ends without explicit StopMedia."""
+    tx = getattr(client.state, "_rtp_tx", None)
+    if tx is not None:
+        tx.stop()
+        client.state._rtp_tx = None
+    rx = getattr(client.state, "_rtp_rx", None)
+    if rx is not None:
+        rx.detach_echo()
+        rx.stop()
+        client.state._rtp_rx = None
+    client.state._rtp_echo_source = None
+    _stop_rtp_recorder(client)
+    _stop_rtp_stats_monitor(client)
+    client.state.media_active = False
+    client.events.media_started.clear()
+
+
 def _rtp_play_worker(client):
     if not client.state.enable_audio:
         return None
@@ -368,6 +386,7 @@ def parse_call_state(client, payload):
     call["precedence_domain"] = precedence_domain
 
     if call_state in [0, 2]:          # Idle / OnHook
+        _teardown_local_media(client)
         mark_call_ended(client, call_reference, source="CallState")
 
     elif call_state in [3, 4]:        # RingOut / RingIn

@@ -23,6 +23,7 @@ class ConsoleApp:
         self.action_bindings = []
         self.action_page = 0
         self.actions_per_page = 8
+        self._last_state_dump = 0.0
 
         # Attach a curses-backed logging handler to the root logger
         self._log_handler = self.make_logging_handler()
@@ -124,18 +125,14 @@ class ConsoleApp:
         if not self.client or not self.client.state:
             return
 
-        if self.client.state:
-            write_json_to_file("logs/client_state.json", self.client.state.to_dict())
+        if self.client.state.is_registered.is_set():
+            now = time.time()
+            if now - self._last_state_dump >= 2.0:
+                write_json_to_file("logs/client_state.json", self.client.state.to_dict())
+                self._last_state_dump = now
 
         if not self.client.state.is_registered.is_set():
-            self.client.state.is_registered.wait(timeout=30)
-
-            if not self.client.state.is_registered.is_set():
-                self.client.stop()
-                self.client.logger.error(
-                    f"({self.client.state.device_name}) Phone failed to register in time."
-                )
-                return
+            return
 
         # Prefer softkeys when present.
         softkey_count = int(getattr(self.client.state, "total_softkey_count", 0) or 0)
@@ -235,15 +232,8 @@ class ConsoleApp:
             label = action["label"]
 
             scr = self.client.state.selected_call_reference or 0
-            if scr != 0:
-                scr_call_state = (
-                    self.client.state.calls
-                    .get(str(scr), {})
-                    .get("call_state", None)
-                )
-
-                if scr_call_state == 5 or label == "NewCall":
-                    scr = 0
+            if label == "NewCall":
+                scr = 0
 
             self.client.press_softkey(label, line=self.line, call_ref=scr)
             return
@@ -255,6 +245,20 @@ class ConsoleApp:
             # Add this method on SCCPClient if you do not already have it.
             self.client.press_stimulus(button_type, instance)
             return
+
+    def _hangup_active_calls(self) -> None:
+        if not self.client or not self.client.state:
+            return
+        if getattr(self.client.state, "active_call", False):
+            try:
+                self.client.press_softkey("EndCall")
+            except Exception:
+                pass
+            try:
+                self.client.on_hook()
+            except Exception:
+                pass
+            time.sleep(0.35)
 
     def _handle_log_scrolling_key(self, ch, page_h):
         """Update scroll state based on keypress. Returns True if consumed."""
@@ -367,12 +371,7 @@ class ConsoleApp:
 
                 # Quit
                 if ch in ("q", "Q"):
-                    # if not self.client.state.is_unregistered.is_set():
-                    #     self.stop_event.set()
-                    #     break
-                    #
-                    # self.client.stop()
-                    # continue
+                    self._hangup_active_calls()
                     self.stop_event.set()
                     break
 

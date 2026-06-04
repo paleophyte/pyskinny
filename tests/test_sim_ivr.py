@@ -72,7 +72,34 @@ def test_dial_ivr_auto_connects():
         assert state.is_unregistered.wait(timeout=10)
 
 
-def test_dial_ivr_starts_sim_media_hub():
+def test_dial_ivr_end_call_hangs_up():
+    sim = SkinnySimulator(
+        host="127.0.0.1",
+        port=0,
+        dn_start=5500,
+        tftp=False,
+        ivr_dn="9999",
+        rtp_sim_peer="tone",
+    )
+    sim.start(background=True)
+    time.sleep(0.15)
+    host, port = sim.address
+
+    client, state = _register_client(host, port, "AABBCCDDEE22")
+
+    try:
+        _dial(client, "9999")
+        assert client.events.call_connected.wait(timeout=10)
+        client.events.call_connected.clear()
+
+        client.press_softkey("EndCall")
+        assert client.events.call_ended.wait(timeout=10), "EndCall did not end IVR call"
+        assert not client.state.active_calls_list
+    finally:
+        client.stop()
+        sim.stop()
+        assert state.is_unregistered.wait(timeout=10)
+
     sim = SkinnySimulator(
         host="127.0.0.1",
         port=0,

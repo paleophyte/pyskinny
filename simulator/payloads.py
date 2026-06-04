@@ -304,6 +304,28 @@ def start_media_transmission(
     return pack_message(0x008A, body)
 
 
+def stop_media_transmission(
+    call_ref: int = 0,
+    *,
+    pass_through_party_id: int = PASS_THROUGH_PARTY_ID,
+) -> bytes:
+    from simulator.protocol import pack_message
+
+    body = struct.pack("<III", 0, pass_through_party_id, call_ref)
+    return pack_message(0x008B, body)
+
+
+def close_receive_channel(
+    call_ref: int = 0,
+    *,
+    pass_through_party_id: int = PASS_THROUGH_PARTY_ID,
+) -> bytes:
+    from simulator.protocol import pack_message
+
+    body = struct.pack("<III", 0, pass_through_party_id, call_ref)
+    return pack_message(0x0106, body)
+
+
 def parse_open_receive_channel_ack(payload: bytes) -> dict[str, int]:
     """Parse OpenReceiveChannelAck (7912 sends 16 bytes; CM may send 20)."""
     if len(payload) < 12:
