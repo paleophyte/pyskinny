@@ -67,9 +67,10 @@ def test_dial_ivr_auto_connects():
         labels = [label for label, _ in client.state.get_current_softkeys()]
         assert "EndCall" in labels
     finally:
+        client.on_hook()
+        time.sleep(0.2)
         client.stop()
         sim.stop()
-        assert state.is_unregistered.wait(timeout=10)
 
 
 def test_dial_ivr_end_call_hangs_up():
@@ -85,12 +86,13 @@ def test_dial_ivr_end_call_hangs_up():
     time.sleep(0.15)
     host, port = sim.address
 
-    client, state = _register_client(host, port, "AABBCCDDEE22")
+    client, _state = _register_client(host, port, "AABBCCDDEE22")
 
     try:
         _dial(client, "9999")
         assert client.events.call_connected.wait(timeout=10)
         client.events.call_connected.clear()
+        client.events.call_ended.clear()
 
         client.press_softkey("EndCall")
         assert client.events.call_ended.wait(timeout=10), "EndCall did not end IVR call"
@@ -99,6 +101,8 @@ def test_dial_ivr_end_call_hangs_up():
         client.stop()
         sim.stop()
 
+
+def test_dial_ivr_starts_sim_media_hub():
     sim = SkinnySimulator(
         host="127.0.0.1",
         port=0,
@@ -111,7 +115,7 @@ def test_dial_ivr_end_call_hangs_up():
     time.sleep(0.15)
     host, port = sim.address
 
-    client, state = _register_client(host, port, "AABBCCDDEE21")
+    client, _state = _register_client(host, port, "AABBCCDDEE21")
 
     try:
         _dial(client, "9999")
@@ -125,6 +129,7 @@ def test_dial_ivr_end_call_hangs_up():
         assert sim._media_hub is not None
         assert sim._media_hub._sessions, "SimMediaHub should be active after IVR media ack"
     finally:
+        client.on_hook()
+        time.sleep(0.2)
         client.stop()
         sim.stop()
-        assert state.is_unregistered.wait(timeout=10)

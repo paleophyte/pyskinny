@@ -436,6 +436,15 @@ def parse_activate_callplane(client, payload):
     logger.info(f"[RECV] ActivateCallPlane")
 
 
+def end_local_call(client, source: str = "local") -> None:
+    """Stop local RTP/tone immediately; update call state without waiting for CM."""
+    _teardown_local_media(client)
+    if client.state.enable_audio:
+        client.audio.clear_tone(1)
+    _, ref = client.resolve_call_target()
+    mark_call_ended(client, ref if ref else None, source=source)
+
+
 @register_handler(0x0082, "StartTone")
 def parse_start_tone(client, payload):
     buf = Buf(payload)

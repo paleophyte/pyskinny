@@ -7,21 +7,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from utils.skinny_messages import get_message_name
+
 PCAP = Path(__file__).resolve().parents[1] / "cm_cap.pcapng"
 TSHARK = r"c:\Program Files\Wireshark\tshark.exe"
-
-MSG = {
-    0x0026: "SoftKeyEvent",
-    0x0085: "SetRinger",
-    0x0086: "SetLamp",
-    0x0088: "SetSpeakerMode",
-    0x0082: "StartTone",
-    0x0083: "StopTone",
-    0x0110: "SelectSoftKeys",
-    0x0111: "CallState",
-    0x0112: "DisplayPromptStatus",
-    0x0116: "ActivateCallPlane",
-}
 
 
 def payload(frame: int) -> tuple[str, bytes | None]:
@@ -55,7 +44,7 @@ def decode(frame: int) -> None:
         return
     dl, _ver, mid = struct.unpack("<III", raw[:12])
     body = raw[12:]
-    name = MSG.get(mid, f"0x{mid:04x}")
+    name = get_message_name(mid)
     print(f"=== frame {frame} {info} ({name}) total={len(raw)} body={len(body)} ===")
     print(f"  body_hex: {body.hex()}")
     if mid == 0x0026 and len(body) >= 12:

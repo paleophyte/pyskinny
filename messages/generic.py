@@ -1,5 +1,5 @@
 import struct
-from dispatcher import get_message_name
+from utils.skinny_messages import get_message_name
 import os
 import string
 import datetime
@@ -322,14 +322,40 @@ def get_skinny_message(msg_id, trailing_data=b""):
 
 
 def send_skinny_message(client, msg_id, trailing_data=b"", silent=False):
+    from utils.logs import log_skinny_wire, skinny_trace_enabled
+
     packet = get_skinny_message(msg_id, trailing_data)
-    client.sock.sendall(packet)
-
     msg_txt = get_message_name(msg_id)
+    if not client.sock:
+        logger.error("(%s) [SEND] %s failed: not connected", client.state.device_name, msg_txt)
+        return
+    try:
+        client.sock.sendall(packet)
+    except OSError as exc:
+        logger.error(
+            "(%s) [SEND] %s failed: %s",
+            client.state.device_name,
+            msg_txt,
+            exc,
+        )
+        return
 
-    if not silent:
-        # logger.info(f"[SEND] {msg_txt} ({len(packet)} bytes)")
-        logger.info(f"({client.state.device_name}) [SEND] {msg_txt}")
+    log_skinny_wire(
+        logger,
+        client.state.device_name,
+        "SEND",
+        msg_id,
+        msg_txt,
+        len(packet),
+    )
+    if not silent and not skinny_trace_enabled():
+        logger.info(
+            "(%s) [SEND] 0x%04X %s (%d bytes)",
+            client.state.device_name,
+            msg_id,
+            msg_txt,
+            len(packet),
+        )
 
 
 def clean_bytes(b: bytes) -> str:

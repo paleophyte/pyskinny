@@ -93,6 +93,19 @@ class SkinnySession:
                 )
 
     def send(self, packet: bytes) -> None:
+        if len(packet) >= 12:
+            from utils.skinny_messages import get_message_name
+            from utils.logs import log_skinny_wire
+
+            _mid = struct.unpack("<III", packet[:12])[2]
+            log_skinny_wire(
+                logger,
+                self.device_name or self.addr[0],
+                "SEND",
+                _mid,
+                get_message_name(_mid),
+                len(packet),
+            )
         self.conn.sendall(packet)
 
     def send_many(self, packets: list[bytes]) -> None:
@@ -100,6 +113,17 @@ class SkinnySession:
             self.send(packet)
 
     def _handle(self, msg_id: int, payload: bytes) -> bool:
+        from utils.skinny_messages import get_message_name
+        from utils.logs import log_skinny_wire
+
+        log_skinny_wire(
+            logger,
+            self.device_name or self.addr[0],
+            "RECV",
+            msg_id,
+            get_message_name(msg_id),
+            len(payload),
+        )
         if msg_id == MSG_REGISTER_REQ:
             return self._on_register(payload)
         if msg_id == MSG_IP_PORT:

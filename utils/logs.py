@@ -2,6 +2,39 @@ import logging
 
 
 MESSAGE_LOG_LEVEL = logging.WARNING - 5
+_VERBOSE_COUNT = 0
+
+
+def verbose_count() -> int:
+    return _VERBOSE_COUNT
+
+
+def skinny_trace_enabled() -> bool:
+    """True at -vvvv and above: log every Skinny SEND/RECV."""
+    return _VERBOSE_COUNT >= 4
+
+
+def log_skinny_wire(
+    logger: logging.Logger,
+    device: str,
+    direction: str,
+    msg_id: int,
+    name: str,
+    nbytes: int = 0,
+) -> None:
+    """Log one Skinny frame at MESSAGE level when -vvvv wire trace is enabled."""
+    if not skinny_trace_enabled():
+        return
+    ensure_message_log_level()
+    logger.log(
+        MESSAGE_LOG_LEVEL,
+        "(%s) [%s] 0x%04X %s (%d bytes)",
+        device,
+        direction,
+        msg_id,
+        name,
+        nbytes,
+    )
 
 
 def addLoggingLevel(levelName, levelNum, methodName=None):
@@ -75,10 +108,15 @@ def configure_logging_from_verbose(
     tftpy_level: int = logging.WARNING,
 ) -> int:
     """Configure root logging from -v / -vv / -vvv / -vvvv style counts."""
+    global _VERBOSE_COUNT
+    _VERBOSE_COUNT = max(0, int(verbose))
     ensure_message_log_level()
     log_level = log_level_from_verbose(verbose)
     if fmt is None:
         fmt = "%(asctime)s [%(levelname)-7s] %(name)-22s: %(message)s"
     logging.basicConfig(level=log_level, format=fmt, force=True)
     logging.getLogger("tftpy").setLevel(tftpy_level)
+    from utils.tftp_logging import configure_tftpy_logging
+
+    configure_tftpy_logging(level=tftpy_level)
     return log_level

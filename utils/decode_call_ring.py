@@ -6,21 +6,10 @@ import struct
 import subprocess
 from pathlib import Path
 
+from utils.skinny_messages import get_message_name
+
 PCAP = Path(__file__).resolve().parents[1] / "cm_call_from_pyskinny_to_7912.pcapng"
 TSHARK = r"c:\Program Files\Wireshark\tshark.exe"
-
-MSG = {
-    0x0111: "CallState",
-    0x0085: "SetRinger",
-    0x0088: "SetSpeakerMode",
-    0x0086: "SetLamp",
-    0x0116: "ActivateCallPlane",
-    0x0082: "StartTone",
-    0x0083: "StopTone",
-    0x0110: "SelectSoftKeys",
-    0x0112: "DisplayPromptStatus",
-    0x0115: "CallInfo",
-}
 
 
 def main() -> None:
@@ -49,7 +38,7 @@ def main() -> None:
             continue
         mid = struct.unpack("<I", raw[8:12])[0]
         body = raw[12:]
-        name = MSG.get(mid, f"0x{mid:04x}")
+        name = get_message_name(mid)
         dst = parts[0].rsplit(".", 1)[-1]
         extra = ""
         if mid == 0x0111 and len(body) >= 12:

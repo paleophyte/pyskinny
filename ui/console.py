@@ -9,6 +9,47 @@ from utils.cli_media import init_phone_state_from_args
 from utils.client import write_json_to_file
 
 
+def _fkey_esc_map():
+    m = {}
+    for n, c in ((1, "P"), (2, "Q"), (3, "R"), (4, "S")):
+        fk = getattr(curses, f"KEY_F{n}", None)
+        if fk is not None:
+            m[f"\x1bO{c}"] = fk
+    for n in range(1, 13):
+        fk = getattr(curses, f"KEY_F{n}", None)
+        if fk is not None:
+            m[f"\x1b[{n + 10}~"] = fk
+    return m
+
+
+_FKEY_ESC = _fkey_esc_map()
+
+
+def _normalize_console_key(ch):
+    """Normalize Windows/curses key values to str or KEY_* ints."""
+    if ch is None:
+        return None
+    if isinstance(ch, tuple):
+        ch = ch[0] if ch else None
+        if ch is None:
+            return None
+    if isinstance(ch, bytes):
+        try:
+            ch = ch.decode("utf-8", errors="replace")
+        except Exception:
+            return None
+    if isinstance(ch, int):
+        if 32 <= ch <= 126:
+            return chr(ch)
+        return ch
+    if isinstance(ch, str):
+        if len(ch) == 1:
+            return ch
+        if ch in _FKEY_ESC:
+            return _FKEY_ESC[ch]
+    return ch
+
+
 class ConsoleApp:
     def __init__(self, *, skip_tftp: bool = False):
         self.skip_tftp = skip_tftp
@@ -108,15 +149,18 @@ class ConsoleApp:
     #             break
     #     self.softkey_labels = labels
 
+    def _call_in_progress(self) -> bool:
+        state = self.client.state if self.client else None
+        if not state:
+            return False
+        return bool(
+            getattr(state, "active_call", False)
+            or getattr(state, "media_active", False)
+            or getattr(state, "active_calls_list", None)
+        )
+
     def _toggle_hook(self):
-        state = self.client.state
-
-        has_active_call = bool(getattr(state, "active_call", False))
-        has_calls = bool(getattr(state, "calls", {}) or {})
-        speaker_mode = getattr(state, "speaker_mode", None)
-
-        # If we're in a call, Space/Enter should hang up.
-        if has_active_call:         # or has_calls or speaker_mode
+        if self._call_in_progress():
             self.client.on_hook()
         else:
             self.client.off_hook()
@@ -124,12 +168,6 @@ class ConsoleApp:
     def _refresh_actions(self):
         if not self.client or not self.client.state:
             return
-
-        if self.client.state.is_registered.is_set():
-            now = time.time()
-            if now - self._last_state_dump >= 2.0:
-                write_json_to_file("logs/client_state.json", self.client.state.to_dict())
-                self._last_state_dump = now
 
         if not self.client.state.is_registered.is_set():
             return
@@ -252,19 +290,26 @@ class ConsoleApp:
             self.client.press_stimulus(button_type, instance)
             return
 
-    def _hangup_active_calls(self) -> None:
+    def _hangup_active_calls(self, *, notify_server: bool = True) -> None:
         if not self.client or not self.client.state:
             return
-        if getattr(self.client.state, "active_call", False):
+        if not self._call_in_progress():
+            return
+        try:
+            from messages.phone import end_local_call
+            end_local_call(self.client, source="console-hangup")
+        except Exception:
+            logging.getLogger(__name__).exception("local media teardown failed")
+        if notify_server:
             try:
-                self.client.press_softkey("EndCall")
+                _, call_ref = self.client.resolve_call_target(self.line, 0)
+                self.client.press_softkey("EndCall", line=self.line, call_ref=call_ref)
             except Exception:
                 pass
             try:
                 self.client.on_hook()
             except Exception:
                 pass
-            time.sleep(0.35)
 
     def _handle_log_scrolling_key(self, ch, page_h):
         """Update scroll state based on keypress. Returns True if consumed."""
@@ -325,6 +370,7 @@ class ConsoleApp:
         self.client.get_tftp_config = not self.skip_tftp
 
         curses.curs_set(0)
+        stdscr.keypad(True)
         stdscr.nodelay(True)
         stdscr.timeout(100)  # 100ms UI tick
 
@@ -335,163 +381,152 @@ class ConsoleApp:
         try:
             last_draw = 0
             while not self.stop_event.is_set():
-                now = time.time()
-                if now - last_draw > 0.1:
-                    self.draw(stdscr)
-                    last_draw = now
-
                 try:
                     ch = stdscr.get_wch()
                 except curses.error:
                     ch = None
 
-                if ch is None:
-                    continue
+                if ch is not None:
+                    if self._handle_input(stdscr, ch):
+                        break
 
-                # NOTE: log pane key handling needs its page height; compute a quick estimate
-                h, w = stdscr.getmaxyx()
-                log_w = max(32, int(w * 0.40))
-                log_h = max(5, h - 4)  # space we roughly draw within
-                if self._handle_log_scrolling_key(ch, log_h):
-                    continue
-
-                # Call selection (arrow keys)
-                refs, _ = self._active_calls_snapshot()
-                if refs:
-                    if ch == curses.KEY_UP:
-                        self._selected_call_idx = max(0, self._selected_call_idx - 1)
-                        self._selected_call_ref = refs[self._selected_call_idx]
-                        try:
-                            setattr(self.client.state, 'selected_call_reference', self._selected_call_ref)
-                        except Exception:
-                            pass
-                        continue
-                    if ch == curses.KEY_DOWN:
-                        self._selected_call_idx = min(len(refs) - 1, self._selected_call_idx + 1)
-                        self._selected_call_ref = refs[self._selected_call_idx]
-                        try:
-                            setattr(self.client.state, 'selected_call_reference', self._selected_call_ref)
-                        except Exception:
-                            pass
-                        continue
-
-                # Quit
-                if ch in ("q", "Q"):
-                    self._hangup_active_calls()
-                    self.stop_event.set()
-                    break
-
-                # Digits (DTMF)
-                if isinstance(ch, str) and ch in "0123456789*#":
-                    if handle_keypad_press:
-                        try:
-                            # messages.generic expects a "digit code". If it supports raw chars,
-                            # it will handle it; otherwise we try to coerce common mapping.
-                            d = ch
-                            if ch == "*":
-                                d = 10
-                            elif ch == "#":
-                                d = 11
-                            elif ch.isdigit():
-                                d = int(ch)
-                            handle_keypad_press(self.client, self.line, d)
-                        except Exception:
-                            pass  # no-op on failure so UI stays responsive
-                    continue
-
-                # Volume (example: +/- keys)
-                if ch in ("+", "="):
-                    try:
-                        vol = float(getattr(self.client.state, "tone_volume", 0.0)) + 1.0
-                        self.client.handle_volume_change(vol)
-                    except Exception:
-                        pass
-                    continue
-                if ch in ("-", "_"):
-                    try:
-                        vol = float(getattr(self.client.state, "tone_volume", 0.0)) - 1.0
-                        self.client.handle_volume_change(vol)
-                    except Exception:
-                        pass
-                    continue
-
-                # Softkeys bound to function keys F1..F12
-                # if isinstance(ch, int) and curses.KEY_F1 <= ch <= curses.KEY_F12:
-                #     idx = ch - curses.KEY_F1
-                #     if 0 <= idx < len(self.softkey_labels):
-                #         label = self.softkey_labels[idx]
-                #         try:
-                #             scr = self.client.state.selected_call_reference or 0
-                #             if scr != 0:
-                #                 scr_call_state = self.client.state.calls.get(str(scr), {}).get("call_state", None)
-                #                 if scr_call_state == 5 or label == "NewCall":
-                #                     # if call is connected or if the "NewCall" softkey is pressed, reset the
-                #                     #  call reference to 0 since it's the active call
-                #                     scr = 0
-                #
-                #             self.client.press_softkey(label, line=self.line, call_ref=scr)
-                #         except Exception:
-                #             pass
-                #     continue
-
-                if isinstance(ch, int) and curses.KEY_F1 <= ch <= curses.KEY_F12:
-                    idx = ch - curses.KEY_F1
-
-                    # F11 / F12 page button actions when in CM2-style button mode.
-                    has_softkeys = bool(getattr(self.client.state, "total_softkey_count", 0) or 0)
-
-                    if not has_softkeys and idx == self.actions_per_page:
-                        self.action_page = max(0, self.action_page - 1)
-                        self._refresh_actions()
-                        continue
-
-                    if not has_softkeys and idx == self.actions_per_page + 1:
-                        self.action_page += 1
-                        self._refresh_actions()
-                        continue
-
-                    if 0 <= idx < len(self.action_bindings):
-                        try:
-                            self._press_action(self.action_bindings[idx])
-                        except Exception:
-                            pass
-
-                    continue
-
-                # Beep test
-                if ch in ("b", "B"):
-                    try:
-                        self.client.play_beep()
-                    except Exception:
-                        pass
-                    continue
-
-                # Force refresh softkeys
-                if ch in ("r", "R"):
-                    self._refresh_actions()
-                    continue
-
-                if ch in (" ", "\n", "\r", "`"):
-                    try:
-                        self._toggle_hook()
-                    except Exception:
-                        pass
-                    continue
-
-                if ch in ("h", "H"):
-                    try:
-                        self._toggle_hold()
-                    except Exception:
-                        pass
-                    continue
+                now = time.time()
+                if now - last_draw > 0.1:
+                    self.draw(stdscr)
+                    last_draw = now
 
         finally:
             try:
-
+                self._hangup_active_calls()
                 self.client.stop()
             except Exception:
-                pass
+                logging.getLogger(__name__).exception("shutdown failed")
             curses.endwin()
+
+    def _handle_input(self, stdscr, ch) -> bool:
+        """Handle one key; return True to exit main loop."""
+        ch = _normalize_console_key(ch)
+        if ch is None:
+            return False
+
+        h, w = stdscr.getmaxyx()
+        log_w = max(32, int(w * 0.40))
+        log_h = max(5, h - 4)
+        if self._handle_log_scrolling_key(ch, log_h):
+            return False
+
+        refs, _ = self._active_calls_snapshot()
+        if refs:
+            if ch == curses.KEY_UP:
+                self._selected_call_idx = max(0, self._selected_call_idx - 1)
+                self._selected_call_ref = refs[self._selected_call_idx]
+                try:
+                    setattr(self.client.state, 'selected_call_reference', self._selected_call_ref)
+                except Exception:
+                    pass
+                return False
+            if ch == curses.KEY_DOWN:
+                self._selected_call_idx = min(len(refs) - 1, self._selected_call_idx + 1)
+                self._selected_call_ref = refs[self._selected_call_idx]
+                try:
+                    setattr(self.client.state, 'selected_call_reference', self._selected_call_ref)
+                except Exception:
+                    pass
+                return False
+
+        if ch in ("q", "Q", ord("q"), ord("Q")):
+            self._hangup_active_calls()
+            self.stop_event.set()
+            return True
+
+        if isinstance(ch, str) and ch in "0123456789*#":
+            try:
+                d = ch
+                if ch == "*":
+                    d = 10
+                elif ch == "#":
+                    d = 11
+                elif ch.isdigit():
+                    d = int(ch)
+                handle_keypad_press(self.client, self.line, d)
+            except Exception:
+                logging.getLogger(__name__).exception("keypad failed")
+            return False
+
+        if ch in ("+", "="):
+            try:
+                vol = float(getattr(self.client.state, "tone_volume", 0.0)) + 1.0
+                self.client.handle_volume_change(vol)
+            except Exception:
+                pass
+            return False
+        if ch in ("-", "_"):
+            try:
+                vol = float(getattr(self.client.state, "tone_volume", 0.0)) - 1.0
+                self.client.handle_volume_change(vol)
+            except Exception:
+                pass
+            return False
+
+        if isinstance(ch, int) and curses.KEY_F1 <= ch <= curses.KEY_F12:
+            idx = ch - curses.KEY_F1
+            has_softkeys = bool(getattr(self.client.state, "total_softkey_count", 0) or 0)
+
+            if not has_softkeys and idx == self.actions_per_page:
+                self.action_page = max(0, self.action_page - 1)
+                self._refresh_actions()
+                return False
+
+            if not has_softkeys and idx == self.actions_per_page + 1:
+                self.action_page += 1
+                self._refresh_actions()
+                return False
+
+            if 0 <= idx < len(self.action_bindings):
+                try:
+                    self._press_action(self.action_bindings[idx])
+                except Exception:
+                    logging.getLogger(__name__).exception("softkey/button failed")
+            return False
+
+        if ch in ("b", "B"):
+            try:
+                self.client.play_beep()
+            except Exception:
+                pass
+            return False
+
+        if ch in ("r", "R"):
+            self._refresh_actions()
+            try:
+                write_json_to_file("logs/client_state.json", self.client.state.to_dict())
+            except Exception:
+                pass
+            return False
+
+        if ch in (" ", "\n", "\r", "`", ord(" ")):
+            try:
+                self._toggle_hook()
+            except Exception:
+                logging.getLogger(__name__).exception("hook toggle failed")
+            return False
+
+        if ch in ("e", "E", ord("e"), ord("E")) and self._call_in_progress():
+            try:
+                _, call_ref = self.client.resolve_call_target(self.line, 0)
+                self.client.press_softkey("EndCall", line=self.line, call_ref=call_ref)
+            except Exception:
+                logging.getLogger(__name__).exception("EndCall failed")
+            return False
+
+        if ch in ("h", "H"):
+            try:
+                self._toggle_hold()
+            except Exception:
+                logging.getLogger(__name__).exception("hold toggle failed")
+            return False
+
+        return False
 
     def draw(self, stdscr):
         h, w = stdscr.getmaxyx()
@@ -621,7 +656,7 @@ class ConsoleApp:
         # Footer / help
         # help1 = "Digits: 0-9 * #   Vol: +/-   Beep: b   Refresh: r   Quit: q   [/]/{/}/g/G: scroll logs   Ctrl-L: clear logs"
         help1 = (
-            "Digits: 0-9 * #   Hook: Space   Hold: h   Vol: +/-   "
+            "Digits: 0-9 * #   Hook: Space   EndCall: F1/e   Hold: h   Vol: +/-   "
             "Beep: b   Refresh: r   Quit: q"
         )
         help2 = (

@@ -88,34 +88,45 @@ class SCCPClient:
         self._send_register()
 
     def stop(self):
-        if self.sock:
-            self._send_unregister()
-            if not self.state.is_unregistered.wait(timeout=10):
-                self.logger.warning(
-                    f"({self.state.device_name}) UnregisterAck not received within timeout"
-                )
-
-        # signal loops to exit
         self.running = False
         self._stop_event.set()
 
-        # unblock recv() immediately
         try:
-            self.sock.shutdown(socket.SHUT_RDWR)
+            from messages.phone import _teardown_local_media
+            _teardown_local_media(self)
         except Exception:
             pass
         try:
-            self.sock.close()
+            self.audio.clear_all()
         except Exception:
             pass
 
-        # stop any playing audio
-        self.audio.close()
+        sock = self.sock
+        if sock:
+            try:
+                if self.state.is_registered.is_set():
+                    self._send_unregister()
+                    self.state.is_unregistered.wait(timeout=2.0)
+            except Exception:
+                pass
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except Exception:
+                pass
+            try:
+                sock.close()
+            except Exception:
+                pass
+            self.sock = None
 
-        # join threads (short timeout to avoid hangs)
         for t in self._threads:
             if t.is_alive():
-                t.join(timeout=2.0)
+                t.join(timeout=1.5)
+
+        try:
+            self.audio.close()
+        except Exception:
+            pass
 
     def _send_unregister(self):
         send_unregister_req(self)
@@ -236,6 +247,10 @@ class SCCPClient:
                 getattr(self.state, "selected_call_reference", None),
                 *(self.state.active_calls_list or []),
             ]
+            for sk_meta in (self.state.selected_softkeys or {}).values():
+                cref = sk_meta.get("call_reference")
+                if cref:
+                    candidates.append(cref)
             for candidate in candidates:
                 nref = self.numeric_call_ref(candidate)
                 if nref is None and candidate is not None:
@@ -255,6 +270,9 @@ class SCCPClient:
         active_line, active_call_ref = self.resolve_call_target(line, call_ref)
         for v in key_defs.values():
             if v.get("label") == softkey_name:
+                if softkey_name == "EndCall":
+                    from messages.phone import end_local_call
+                    end_local_call(self, source="local-endcall")
                 handle_softkey_press(self, active_line, v["event"], active_call_ref)
                 return
         self.logger.warning(f"({self.state.device_name}) No such softkey {softkey_name}")
@@ -299,6 +317,8 @@ class SCCPClient:
             self.logger.warning(f"({self.state.device_name}) No such button {button_type}/{instance}")
 
     def on_hook(self):
+        from messages.phone import end_local_call
+        end_local_call(self, source="local-onhook")
         send_onhook(self)
         self.state.update_prompt("", 0)
 

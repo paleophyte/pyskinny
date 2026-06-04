@@ -297,7 +297,9 @@ def main():
 
     # ---- replace basicConfig with explicit handlers ----
     root = logging.getLogger()
-    logging.getLogger("tftpy").setLevel(logging.WARNING)
+    from utils.tftp_logging import configure_tftpy_logging
+
+    configure_tftpy_logging(level=logging.WARNING)
     # Let all records through the logger; handlers will filter/format.
     root.setLevel(logging.DEBUG)
 
