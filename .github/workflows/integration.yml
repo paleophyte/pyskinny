@@ -5,21 +5,45 @@ on:
   workflow_dispatch:
     inputs:
       integration_labs:
-        description: Comma-separated labs (cm2, cm43)
+        description: Comma-separated labs (cm2, cm31, cm33, cm41, cm43)
         required: false
-        default: "cm2,cm43"
+        default: "cm2,cm31,cm33,cm41,cm43"
       cm2_server:
         description: CM2 server IP
         required: false
         default: "10.0.0.11"
-      cm43_server:
-        description: CM4.3 / CUCM server IP
+      cm31_server:
+        description: CM3.1 server IP
+        required: false
+        default: "10.0.0.181"
+      cm31_model:
+        description: CM3.1 phone model
+        required: false
+        default: "7960"
+      cm33_server:
+        description: CM3.3 server IP
+        required: false
+        default: "10.0.0.182"
+      cm41_server:
+        description: CM4.1 server IP
         required: false
         default: "10.0.0.180"
-      cm43_mac_a:
-        description: CM4.3 device A MAC (no separators)
+      cm43_server:
+        description: CM4.3 server IP
+        required: false
+        default: "100.69.0.100"
+      mac_a:
+        description: Shared device A MAC (no separators)
         required: false
         default: "222233334444"
+      mac_b:
+        description: Shared device B MAC (no separators)
+        required: false
+        default: "222233334445"
+      mac_c:
+        description: Shared device C MAC (no separators)
+        required: false
+        default: "222233334446"
 
 jobs:
   integration:
@@ -52,7 +76,13 @@ jobs:
         env:
           PYSKINNY_INTEGRATION_LABS: ${{ inputs.integration_labs }}
           PYSKINNY_CM2_SERVER: ${{ inputs.cm2_server }}
+          PYSKINNY_CM31_SERVER: ${{ inputs.cm31_server }}
+          PYSKINNY_CM31_MODEL: ${{ inputs.cm31_model }}
+          PYSKINNY_CM33_SERVER: ${{ inputs.cm33_server }}
+          PYSKINNY_CM41_SERVER: ${{ inputs.cm41_server }}
           PYSKINNY_CM43_SERVER: ${{ inputs.cm43_server }}
-          PYSKINNY_CM43_MAC_A: ${{ inputs.cm43_mac_a }}
+          PYSKINNY_MAC_A: ${{ inputs.mac_a }}
+          PYSKINNY_MAC_B: ${{ inputs.mac_b }}
+          PYSKINNY_MAC_C: ${{ inputs.mac_c }}
           PYSKINNY_SKIP_TFTP: "1"
         run: pytest tests/test_integration_live.py -m integration -v --no-audio

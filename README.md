@@ -42,7 +42,7 @@ pytest -m "not integration" -v --no-audio
 
 **Unit tests** (`.github/workflows/test.yml`): runs on every push/PR to `main` on Ubuntu with Python 3.11 and 3.12. Command: `pytest -m "not integration" -v --no-audio`.
 
-**Integration tests** (`.github/workflows/integration.yml`): manual `workflow_dispatch` on a **self-hosted** runner in the lab network. Targets **CM2** and/or **CM4.3** via `tests/test_integration_live.py`.
+**Integration tests** (`.github/workflows/integration.yml`): manual `workflow_dispatch` on a **self-hosted** runner in the lab network. Defaults to all five labs (`cm2`, `cm31`, `cm33`, `cm41`, `cm43`) via `tests/test_integration_live.py`; workflow inputs override server IPs and shared MACs.
 
 ### Integration (live CM labs)
 
