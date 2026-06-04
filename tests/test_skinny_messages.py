@@ -11,6 +11,7 @@ from utils.tftp_logging import TftpyLogFilter, configure_tftpy_logging
 def test_skinny_message_names_without_importing_handlers():
     assert get_message_name(0x0026) == "SoftKeyEvent"
     assert get_message_name(0x008B) == "StopMediaTransmission"
+    assert get_message_name(0x011F) == "FeatureStatRes"
     assert get_message_name(0x9999) == "Unknown (0x9999)"
 
 

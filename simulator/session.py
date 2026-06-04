@@ -132,8 +132,7 @@ class SkinnySession:
             return True
         if msg_id == MSG_KEEPALIVE:
             if self._registered:
-                logger.info("(%s) KeepAliveReq", self.device_name)
-            self.send(payloads.keepalive_ack())
+                self.send(payloads.keepalive_ack())
             return True
         if msg_id == MSG_ALARM:
             logger.debug("Alarm from %s (pre-register=%s)", self.addr, not self.device_name)

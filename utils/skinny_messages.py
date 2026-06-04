@@ -64,6 +64,7 @@ _SKINNY_MESSAGE_NAMES: dict[int, str] = {
     0x0116: "ActivateCallPlane",
     0x0118: "UnregisterAck",
     0x011D: "DialedNumber",
+    0x011F: "FeatureStatRes",
     0x0120: "DisplayPriNotify",
     0x0130: "CallSelectStatRes",
 }
