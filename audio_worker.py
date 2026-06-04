@@ -547,6 +547,7 @@ class RTPReceiver:
         self.log = log
         self.echo_source: EchoSource | None = None
         self.recorder = None
+        self.stats = None
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((bind_ip, port))
         self.sock.settimeout(0.5)
@@ -563,6 +564,9 @@ class RTPReceiver:
     def attach_recorder(self, recorder) -> None:
         self.recorder = recorder
 
+    def attach_stats(self, stats) -> None:
+        self.stats = stats
+
     def start(self):
         if self.worker is not None:
             self.worker.add_stream(self.source_id, gain_db=0.0)
@@ -576,6 +580,7 @@ class RTPReceiver:
             self.worker.remove_stream(self.source_id)
         self.echo_source = None
         self.recorder = None
+        self.stats = None
 
     def _decode_payload(self, pt: int, payload: bytes) -> np.ndarray:
         if pt == 0:   # PCMU
@@ -605,6 +610,9 @@ class RTPReceiver:
             if version != 2 or len(data) <= header_len:
                 continue
             payload = data[header_len:]
+            stats = self.stats
+            if stats is not None:
+                stats.note_rx(pt, seq, ssrc, len(payload), known_codec=(pt in (0, 8)))
             pcm = self._decode_payload(pt, payload)
             if pcm.size:
                 echo = self.echo_source
@@ -883,6 +891,7 @@ class RTPSender:
         self._src_lock = threading.Lock()
         self._source: _BaseSource = SilenceSource(self.sr)
         self.recorder = None
+        self.stats = None
 
     # ---- public selection APIs ----
     def send_silence(self):
@@ -905,6 +914,9 @@ class RTPSender:
 
     def attach_recorder(self, recorder) -> None:
         self.recorder = recorder
+
+    def attach_stats(self, stats) -> None:
+        self.stats = stats
 
     def _swap_source(self, new_src: _BaseSource):
         with self._src_lock:
@@ -975,6 +987,9 @@ class RTPSender:
                 rec.write_tx(f32)
             # 2) encode -> payload
             payload = self._encode(f32)
+            stats = self.stats
+            if stats is not None:
+                stats.note_tx(self.pt, len(payload))
             # 3) send
             try:
                 self.sock.sendto(self._packet(payload), self.addr)

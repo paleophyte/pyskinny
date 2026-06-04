@@ -9,6 +9,7 @@ from utils.client import get_local_ip, ip_to_int, _keypad_code_to_char
 from audio_worker import RTPReceiver, RTPSender, wire_rtp_loopback, socket
 from utils.rtp_record import RTPRecorder, rtp_record_base_path
 from utils.media_codecs import codec_label, resolve_rtp_payload_type
+from utils.rtp_stats import RTPStats, RTPStatsMonitor
 import logging
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,61 @@ def _attach_recorder_to_media(client, call_ref: int) -> None:
         rx.attach_recorder(rec)
     if tx is not None:
         tx.attach_recorder(rec)
+
+
+def _rtp_stats_enabled(client) -> bool:
+    kv = client.state.kv_dict.get("rtp_stats")
+    if kv is not None:
+        return _truthy(kv)
+    return bool(getattr(client.state, "rtp_stats", False))
+
+
+def _ensure_rtp_stats(client) -> RTPStats | None:
+    if not _rtp_stats_enabled(client):
+        return None
+    stats = getattr(client.state, "_rtp_stats", None)
+    if stats is None:
+        stats = RTPStats()
+        client.state._rtp_stats = stats
+    return stats
+
+
+def _attach_stats_to_media(client) -> None:
+    stats = _ensure_rtp_stats(client)
+    if stats is None:
+        return
+    rx = client.state._rtp_rx
+    tx = client.state._rtp_tx
+    if rx is not None:
+        rx.attach_stats(stats)
+    if tx is not None:
+        tx.attach_stats(stats)
+
+
+def _start_rtp_stats_monitor(client) -> None:
+    stats = getattr(client.state, "_rtp_stats", None)
+    if stats is None:
+        return
+    interval = float(getattr(client.state, "rtp_stats_interval", 0.0) or 0.0)
+    if interval <= 0:
+        return
+    mon = getattr(client.state, "_rtp_stats_monitor", None)
+    if mon is not None:
+        return
+    mon = RTPStatsMonitor(stats, client.logger, interval=interval)
+    mon.start()
+    client.state._rtp_stats_monitor = mon
+
+
+def _stop_rtp_stats_monitor(client, *, final_log: bool = True) -> None:
+    mon = getattr(client.state, "_rtp_stats_monitor", None)
+    if mon is not None:
+        mon.stop()
+        client.state._rtp_stats_monitor = None
+    stats = getattr(client.state, "_rtp_stats", None)
+    if final_log and stats is not None and _rtp_stats_enabled(client):
+        client.logger.info("[RTP stats] %s", stats.summary())
+    client.state._rtp_stats = None
 
 
 def _rtp_play_worker(client):
@@ -679,6 +735,8 @@ def parse_start_media_transmission(client, payload):
 
     client.state._rtp_tx = tx
     _attach_recorder_to_media(client, call_reference)
+    _attach_stats_to_media(client)
+    _start_rtp_stats_monitor(client)
 
     mark_call_connected(
         client,
@@ -712,6 +770,7 @@ def parse_stop_media_transmission(client, payload):
         rx.detach_echo()
     client.state._rtp_echo_source = None
     _stop_rtp_recorder(client)
+    _stop_rtp_stats_monitor(client)
 
     client.state.media_active = False
     client.events.media_started.clear()
@@ -837,6 +896,9 @@ def send_open_receive_channel_ack(client, payload):
     rec = _start_rtp_recorder(client, call_reference)
     if rec is not None:
         rx.attach_recorder(rec)
+    stats = _ensure_rtp_stats(client)
+    if stats is not None:
+        rx.attach_stats(stats)
 
     call_manager_host_ip = get_local_ip(client.state.server)
     station_ip = ip_to_int(call_manager_host_ip)  # still in int form
@@ -882,6 +944,7 @@ def parse_close_receive_channel(client, payload):
     client.state._rtp_rx = None
     client.state._rtp_echo_source = None
     _stop_rtp_recorder(client)
+    _stop_rtp_stats_monitor(client)
 
     logger.info(f"[RECV] CloseReceiveChannel")
 

@@ -84,6 +84,8 @@ def test_apply_media_options_tone_and_record():
             "rtp_loopback_monitor": False,
             "no_audio": False,
             "rtp_pt": None,
+            "rtp_stats": False,
+            "rtp_stats_interval": None,
         },
     )()
     apply_media_options(state, args, None)

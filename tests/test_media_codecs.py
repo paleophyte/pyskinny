@@ -69,6 +69,8 @@ def test_apply_media_play_mode_and_no_audio():
             "rtp_record": False,
             "rtp_record_dir": None,
             "rtp_pt": 8,
+            "rtp_stats": False,
+            "rtp_stats_interval": None,
         },
     )()
     apply_media_options(state, args, None)

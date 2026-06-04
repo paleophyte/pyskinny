@@ -1,134 +1,46 @@
 import argparse
-import json
-from ui.macro_cli import parse_macro_script, run_macro
+import logging
+import os
+import sys
+import threading
+
 from client import SCCPClient
-from config import load_config
-from state import PhoneState
+from ui.macro_cli import parse_macro_script, run_macro
+from utils.cli_media import add_connection_cli_args, add_media_cli_args, init_phone_state_from_args
 from utils.client import write_json_to_file
 from utils.logs import configure_logging_from_verbose, ensure_message_log_level
-import logging
-import os, sys, time, threading, signal
-import re
-
-
-LABEL_LINE = re.compile(r'^\s*([A-Za-z_][\w\-]*)\s*:\s*$')
 
 
 class GracefulExit:
-    """Context manager: sets up signal handlers and a background key watcher.
-       Press Esc or 'q' (or send SIGINT/SIGTERM) to set stop_event."""
-    def __init__(self, stop_event: threading.Event, keys=(b'\x1b', b'q', b'Q')):
+    def __init__(self, stop_event: threading.Event):
         self.stop_event = stop_event
-        self.keys = keys
-        self._thr = None
-        self._tty_state = None
-
-    # --- signals ---
-    def _on_signal(self, signum, frame):
-        # Idempotent
-        self.stop_event.set()
-        print(f"\n[GracefulExit] received signal {signum} → stopping...", flush=True)
-
-    # --- key watcher ---
-    def _run_windows(self):
-        import msvcrt
-        while not self.stop_event.is_set():
-            if msvcrt.kbhit():
-                ch = msvcrt.getch()
-                if ch in self.keys:
-                    self.stop_event.set()
-                    break
-            time.sleep(0.05)
-
-    def _run_posix(self):
-        import termios, tty, select
-        fd = sys.stdin.fileno()
-        if not sys.stdin.isatty():
-            # No TTY (e.g., piping output) — skip key watching
-            return
-        old = termios.tcgetattr(fd)
-        self._tty_state = (fd, old)
-        try:
-            tty.setcbreak(fd)  # non-blocking single-char reads
-            while not self.stop_event.is_set():
-                r, _, _ = select.select([sys.stdin], [], [], 0.1)
-                if r:
-                    ch = sys.stdin.read(1).encode("utf-8", errors="ignore")
-                    if ch in self.keys:
-                        self.stop_event.set()
-                        break
-        finally:
-            try:
-                termios.tcsetattr(fd, termios.TCSADRAIN, old)
-            except Exception:
-                pass
 
     def __enter__(self):
-        # signals
-        signal.signal(signal.SIGINT, self._on_signal)
-        try:
-            signal.signal(signal.SIGTERM, self._on_signal)
-        except Exception:
-            pass  # not available on some platforms
-
-        # background key thread
-        self._thr = threading.Thread(
-            target=self._run_windows if os.name == "nt" else self._run_posix,
-            name="GracefulExitKeyWatcher",
-            daemon=True
-        )
-        self._thr.start()
         return self
 
     def __exit__(self, exc_type, exc, tb):
         self.stop_event.set()
-        # thread is daemon; will exit on process end
-        # TTY state restored in _run_posix finally-block
+        return False
 
 
 def preprocess_macro_text(text: str) -> str:
-    """
-    Turn a multi-line MACRO script into a comma-separated macro string:
-      - supports labels:  NAME:
-      - strips blank lines and comments (#... or //...)
-      - keeps each non-label line as-is
-    """
-    tokens = []
+    lines = []
     for raw in text.splitlines():
         line = raw.strip()
-        if not line:
+        if not line or line.startswith("#"):
             continue
-        if line.startswith('#') or line.startswith('//'):
-            continue
-        # allow simple inline comments after ' #' or ' //'
-        for marker in (' //', ' #'):
-            idx = line.find(marker)
-            if idx != -1:
-                line = line[:idx].rstrip()
-        if not line:
-            continue
-        m = LABEL_LINE.match(line)
-        if m:
-            tokens.append(f"{m.group(1)}:")
-        else:
-            tokens.append(line)
-    # parse_macro_script already handles commas; we join with commas here
-    return ','.join(tokens)
+        lines.append(line)
+    return "\n".join(lines)
+
 
 def load_macro_text(macro_arg: str | None, macro_file: str | None) -> str:
-    """
-    Returns macro text suitable for parse_macro_script().
-    - If macro_file is given, read and preprocess it.
-    - If macro_arg starts with '@', treat the rest as a file path.
-    - Otherwise, return macro_arg as-is (one-liner).
-    """
     if macro_file:
         path = os.path.expanduser(macro_file)
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, "r", encoding="utf-8") as f:
             return preprocess_macro_text(f.read())
-    if macro_arg and macro_arg.startswith('@'):
+    if macro_arg and macro_arg.startswith("@"):
         path = os.path.expanduser(macro_arg[1:])
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, "r", encoding="utf-8") as f:
             return preprocess_macro_text(f.read())
     return macro_arg or ""
 
@@ -136,9 +48,8 @@ def load_macro_text(macro_arg: str | None, macro_file: str | None) -> str:
 def main():
     stop_event = threading.Event()
     parser = argparse.ArgumentParser(description="Macro CLI for SCCPClient")
-    parser.add_argument("--server", required=True, help="CallManager/CUCM server address")
-    parser.add_argument("--mac", required=True, help="MAC address of the phone")
-    parser.add_argument("--model", required=True, help="Phone model")
+    add_connection_cli_args(parser)
+    add_media_cli_args(parser)
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--macro", help="Macro script string, or @path to a .ivr file")
@@ -148,15 +59,15 @@ def main():
                         help="Increase output verbosity (-v = warning, -vv = message, -vvv = info, -vvvv = debug)")
 
     args = parser.parse_args()
-    server = args.server
-    mac = args.mac
-    model = args.model
+    if not args.config and not (args.server and args.model and (args.mac or args.device)):
+        parser.error("Provide --config or explicit --server, --model, and --mac/--device")
+
     macro_text = load_macro_text(args.macro, args.macro_file)
     log_level = configure_logging_from_verbose(args.verbose)
     ensure_message_log_level()
     logging.getLogger(__name__).debug("Log level set to: %s", logging.getLevelName(log_level))
 
-    state = PhoneState(server=server, mac=mac, model=model)
+    state = init_phone_state_from_args(args)
     client = SCCPClient(state=state)
 
     try:
@@ -175,7 +86,6 @@ def main():
     except KeyboardInterrupt:
         stop_event.set()
     finally:
-        # graceful teardown
         try:
             client.stop()
             write_json_to_file("logs/client_state.json", client.state.to_dict())

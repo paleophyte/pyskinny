@@ -152,6 +152,10 @@ class PhoneState:
         self.rtp_record = False
         self.rtp_record_dir = "logs/rtp"
         self.rtp_pt_override = None
+        self.rtp_stats = False
+        self.rtp_stats_interval = 0.0
+        self._rtp_stats = None
+        self._rtp_stats_monitor = None
 
         # Key Value storage
         self.kv_dict = {}
@@ -402,3 +406,14 @@ def apply_media_options(state: PhoneState, args, cfg: dict | None) -> None:
         state.rtp_pt_override = int(pt)
     elif cfg and cfg.get("rtp_pt") is not None:
         state.rtp_pt_override = int(cfg["rtp_pt"])
+    if cfg and cfg.get("rtp_stats"):
+        state.rtp_stats = True
+    if getattr(args, "rtp_stats", False):
+        state.rtp_stats = True
+    if cfg and cfg.get("rtp_stats_interval") is not None:
+        state.rtp_stats_interval = float(cfg["rtp_stats_interval"])
+    interval = getattr(args, "rtp_stats_interval", None)
+    if interval is not None:
+        state.rtp_stats_interval = float(interval)
+    elif getattr(args, "rtp_stats", False) and state.rtp_stats_interval <= 0:
+        state.rtp_stats_interval = 5.0

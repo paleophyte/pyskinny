@@ -2,20 +2,15 @@ import argparse
 from ui.console import ConsoleApp
 import curses
 import logging
-from utils.cli_media import add_media_cli_args
+from utils.cli_media import add_connection_cli_args, add_media_cli_args
 from utils.logs import configure_logging_from_verbose
 from utils.client import write_json_to_file
 
 
 def main():
     parser = argparse.ArgumentParser(description="Console Soft Phone (curses) using SCCPClient")
-    parser.add_argument("--server", help="CallManager/CUCM server address (overrides config)")
-    device_group = parser.add_mutually_exclusive_group()
-    device_group.add_argument("--mac", help="MAC address (e.g., ABCDEF012345)")
-    device_group.add_argument("--device", help="Full SCCP device name (e.g., SEPABCDEF012345)")
-    parser.add_argument("--model", help="Phone model (e.g., Cisco 7970)")
+    add_connection_cli_args(parser)
     parser.add_argument("--line", type=int, default=1, help="Line instance to use for keypad/softkeys")
-    parser.add_argument("--config", action="store_true", help="Load connection details from examples/cli.config")
     parser.add_argument("--skip_tftp", action="store_true", help="Skip TFTP file download")
     add_media_cli_args(parser)
     parser.add_argument("-v", "--verbose", action="count", default=0,

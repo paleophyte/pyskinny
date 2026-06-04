@@ -368,8 +368,9 @@ class CLIPhone:
     Holds config + (optional) live client/state.
     Exposes connect()/disconnect(); unknown attrs delegate to client when connected.
     """
-    def __init__(self, logger=None):
+    def __init__(self, logger=None, cli_args=None):
         self.logger = logger or logging.getLogger("cli")
+        self.cli_args = cli_args
         self.config_path = config_path_from_here()
         self.config = load_config(self.config_path) or {}
         # ensure keys exist
@@ -412,6 +413,13 @@ class CLIPhone:
 
         # Build state/client on demand
         self.state = PhoneState(server=server, mac=mac, device_name=device, model=model)
+        if self.cli_args is not None:
+            from state import apply_media_options
+            apply_media_options(self.state, self.cli_args, self.config)
+        elif self.config:
+            from state import apply_media_options
+            from types import SimpleNamespace
+            apply_media_options(self.state, SimpleNamespace(), self.config)
         self.client = SCCPClient(state=self.state)
 
         iface, src_ip, mac = find_interface_for_target_ip(self.state.server)

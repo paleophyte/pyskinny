@@ -2,6 +2,7 @@ from ui.cli import CLI, CLIPhone, load_cli_spec
 from ui.cli_handlers import FUNCTIONS as CLI_FUNCS
 from utils.client import write_json_to_file
 from utils.logs import ensure_message_log_level, log_level_from_verbose, MESSAGE_LOG_LEVEL
+from utils.cli_media import add_media_cli_args
 import logging
 import os, sys, threading
 import argparse
@@ -285,6 +286,7 @@ def configure_logging(log_level, MESSAGE_LOG_LEVEL, PTKConsoleHandler):
 def main():
     parser = argparse.ArgumentParser(description="Cisco-like CLI for SCCPClient")
     parser.add_argument("--cli-spec", default="ui/cli_commands.json", help="Path to CLI spec JSON")
+    add_media_cli_args(parser)
     parser.add_argument("-v", "--verbose", action="count", default=0)
     args = parser.parse_args()
 
@@ -305,7 +307,7 @@ def main():
     configure_logging(log_level, MESSAGE_LOG_LEVEL, PTKConsoleHandler)
 
     spec = load_cli_spec(args.cli_spec)
-    ctx = CLIPhone(logging.getLogger("cli_phone"))
+    ctx = CLIPhone(logging.getLogger("cli_phone"), cli_args=args)
     cli_obj = CLI(ctx, spec, CLI_FUNCS, ctx.log)
 
     try:
