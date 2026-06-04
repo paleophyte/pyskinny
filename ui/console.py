@@ -81,6 +81,25 @@ class ConsoleApp:
         # --- Active calls selection state ---
         self._selected_call_idx = 0
         self._selected_call_ref = None
+        self._was_registered = False
+
+    def _poll_registration(self) -> None:
+        """Refresh UI when CM Reset/Restart (or reconnect) changes registration."""
+        if not self.client or not self.client.state:
+            return
+        registered = self.client.state.is_registered.is_set()
+        if registered == self._was_registered:
+            return
+        self._was_registered = registered
+        if registered:
+            self._selected_call_idx = 0
+            self._selected_call_ref = None
+            self._refresh_actions()
+            self.log("Registered with CallManager")
+        else:
+            self.action_labels = []
+            self.action_bindings = []
+            self.log("Reconnecting after Reset/Restart…")
 
     def log(self, text: str):
         """Append a line into the log pane (thread-safe)."""
@@ -390,6 +409,8 @@ class ConsoleApp:
                     if self._handle_input(stdscr, ch):
                         break
 
+                self._poll_registration()
+
                 now = time.time()
                 if now - last_draw > 0.1:
                     self.draw(stdscr)
@@ -541,7 +562,8 @@ class ConsoleApp:
         # model = getattr(self.client.state, "model", "")
         model = DEVICE_TYPE_MAP.get(self.client.state.model)
         server = getattr(self.client.state, "server", "")
-        header = f"{dn}  |  {model}  |  CUCM: {server}"
+        reg = "Registered" if self.client.state.is_registered.is_set() else "Reconnecting…"
+        header = f"{dn}  |  {model}  |  CUCM: {server}  |  {reg}"
         stdscr.addstr(0, 1, header[: max(1, left_w - 2)])
 
         # Prompt / status (left area only)

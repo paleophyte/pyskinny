@@ -160,6 +160,15 @@ class SCCPClient:
             self._stop_event.clear()
             self.state.is_registered.clear()
             self.state.is_unregistered.clear()
+            self.state.active_calls_list = []
+            self.state.calls.clear()
+            self.state.callinfo.clear()
+            self.state.selected_softkeys.clear()
+            self.state.selected_call_reference = None
+            self.state.active_call = False
+            self.state.call_active = False
+            self.state.call_connected = False
+            self.state.media_active = False
             self.events.call_ringing.clear()
             self.events.call_connected.clear()
             self.events.media_started.clear()
@@ -178,7 +187,6 @@ class SCCPClient:
             self.running = True
             self._threads = []
             self.connect()
-            self._start_threads()
             self._send_register()
             self.logger.info(f"({self.state.device_name}) CM {label} complete — RegisterReq sent")
         except Exception:
