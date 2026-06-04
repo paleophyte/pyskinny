@@ -7,6 +7,7 @@ import socket
 import threading
 
 from simulator.call_hub import CallHub
+from simulator.media_hub import SimMediaHub
 from simulator.registry import DeviceRegistry
 from simulator.session import SkinnySession
 from simulator.tftp_service import TftpConfigService, resolve_advertise_host
@@ -30,15 +31,21 @@ class SkinnySimulator:
         tftp_root: str | None = None,
         auto_answer: list[str] | None = None,
         cip_port: int = 8088,
+        rtp_sim_peer: str = "off",
+        rtp_sim_tone_hz: float = 1000.0,
     ):
         self.host = host
         self.port = port
         self.server_name = server_name
         self.registry = DeviceRegistry(dn_start=dn_start)
-        self.hub = CallHub()
+        media_hub = SimMediaHub(mode=rtp_sim_peer) if rtp_sim_peer != "off" else None
+        self.hub = CallHub(media_hub=media_hub)
+        self._media_hub = media_hub
         if auto_answer:
             for target in auto_answer:
                 self.hub.set_auto_answer(target)
+        if self._media_hub is not None:
+            self._media_hub.tone_hz = rtp_sim_tone_hz
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -48,6 +55,8 @@ class SkinnySimulator:
 
         if tftp:
             cm_host = resolve_advertise_host(host, advertise_host)
+            if self._media_hub is not None:
+                self._media_hub.set_advertise_ip(cm_host)
             self.tftp = TftpConfigService(
                 self.registry,
                 cm_host,
@@ -57,6 +66,8 @@ class SkinnySimulator:
                 listen_port=tftp_port,
                 cip_port=cip_port,
             )
+        elif self._media_hub is not None:
+            self._media_hub.set_advertise_ip(resolve_advertise_host(host, advertise_host))
 
     @property
     def address(self) -> tuple[str, int]:
@@ -127,6 +138,8 @@ class SkinnySimulator:
 
     def stop(self) -> None:
         self._stop.set()
+        if self._media_hub is not None:
+            self._media_hub.stop_all()
         if self.tftp:
             self.tftp.stop()
         if self._sock:

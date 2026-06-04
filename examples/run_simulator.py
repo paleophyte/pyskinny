@@ -69,6 +69,19 @@ def main() -> None:
         action="store_true",
         help="Auto-answer incoming calls on every registered phone",
     )
+    parser.add_argument(
+        "--rtp-sim-peer",
+        choices=("off", "tone", "loopback", "bridge"),
+        default="off",
+        help="Simulator hosts RTP: tone=play test tone, loopback=echo each leg, bridge=relay A<->B",
+    )
+    parser.add_argument(
+        "--rtp-sim-tone-hz",
+        type=float,
+        default=1000.0,
+        metavar="HZ",
+        help="Tone frequency when --rtp-sim-peer tone (default: 1000)",
+    )
     parser.add_argument("-v", "--verbose", action="count", default=0)
     args = parser.parse_args()
 
@@ -88,6 +101,8 @@ def main() -> None:
         advertise_host=args.advertise_host,
         tftp_root=args.tftp_root,
         auto_answer=auto_answer or None,
+        rtp_sim_peer=args.rtp_sim_peer,
+        rtp_sim_tone_hz=args.rtp_sim_tone_hz,
     )
 
     for mac in args.provision:

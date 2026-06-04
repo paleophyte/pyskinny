@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from simulator import payloads
+from simulator.media_hub import SimMediaHub
 
 if TYPE_CHECKING:
     from simulator.session import SkinnySession
@@ -47,13 +48,14 @@ class SimCall:
 class CallHub:
     """Routes calls between registered simulator sessions by DN."""
 
-    def __init__(self):
+    def __init__(self, *, media_hub: SimMediaHub | None = None):
         self._lock = threading.Lock()
         self._by_device: dict[str, SkinnySession] = {}
         self._by_dn: dict[str, SkinnySession] = {}
         self._calls: dict[int, SimCall] = {}
         self._next_call_ref = 16777216
         self.auto_answer_devices: set[str] = set()
+        self.media_hub = media_hub
 
     def register_session(self, session: SkinnySession) -> None:
         with self._lock:
@@ -421,6 +423,14 @@ class CallHub:
         caller_port = call.media_ports[id(call.caller)]
         callee_port = call.media_ports[id(call.callee)]
 
+        if self.media_hub and self.media_hub.start_call(call):
+            logger.info(
+                "Media started ref=%s via SimMediaHub (%s)",
+                call.call_ref,
+                self.media_hub.mode,
+            )
+            return
+
         call.caller.send(
             payloads.start_media_transmission(call.call_ref, callee_ip, callee_port)
         )
@@ -450,6 +460,9 @@ class CallHub:
             parties = [call.caller]
             if call.callee:
                 parties.append(call.callee)
+
+            if self.media_hub:
+                self.media_hub.stop_call(call.call_ref)
 
             for party in parties:
                 party.active_call = None
