@@ -33,16 +33,16 @@ Unit tests (no CallManager required):
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
-pytest -m "not integration" -v
+pytest -m "not integration" -v --no-audio
 ```
 
 **Lab cookbook:** step-by-step simulator scenarios (3 consoles, IVR macro, admin Reset, second call) — [docs/lab-cookbook.md](docs/lab-cookbook.md).
 
 ### CI (GitHub Actions)
 
-Planned: unit tests on push/PR to `main` (Python 3.11+). Until that lands, run `pytest -m "not integration" -v` locally before pushing.
+**Unit tests** (`.github/workflows/test.yml`): runs on every push/PR to `main` on Ubuntu with Python 3.11 and 3.12. Command: `pytest -m "not integration" -v --no-audio`.
 
-Integration tests against a lab CUCM use a **self-hosted** runner (cloud runners cannot reach private CUCM IPs). Manual workflow only when a self-hosted runner is configured.
+**Integration tests** (`.github/workflows/integration.yml`): manual `workflow_dispatch` on a **self-hosted** runner in the lab network (cloud runners cannot reach private CUCM IPs). Set `PYSKINNY_CUCM_SERVER` via the workflow input.
 
 ### Integration (lab CUCM)
 
@@ -542,7 +542,7 @@ See also [docs/lab-cookbook.md](docs/lab-cookbook.md) for the current simulator 
 - [x] Console / CLI / macro softphones; auto-answer
 
 **Next**
-- [ ] GitHub Actions CI (unit tests on push)
+- [x] GitHub Actions CI (unit tests on push)
 - [ ] `pyproject.toml` / `pip install pyskinny`
 
 **Later**
