@@ -34,6 +34,10 @@ def ip_to_le_int(ip: str) -> int:
     return struct.unpack("<I", socket.inet_aton(ip))[0]
 
 
+IVR_DEVICE_NAME = "SIMIVR"
+IVR_DISPLAY_NAME = "Sim-IVR"
+
+
 @dataclass
 class SimCall:
     call_ref: int
@@ -42,13 +46,14 @@ class SimCall:
     line: int = 1
     dialed: str = ""
     state: str = "idle"
+    ivr: bool = False
     media_ports: dict = field(default_factory=dict)
 
 
 class CallHub:
     """Routes calls between registered simulator sessions by DN."""
 
-    def __init__(self, *, media_hub: SimMediaHub | None = None):
+    def __init__(self, *, media_hub: SimMediaHub | None = None, ivr_dn: str | None = None):
         self._lock = threading.Lock()
         self._by_device: dict[str, SkinnySession] = {}
         self._by_dn: dict[str, SkinnySession] = {}
@@ -56,6 +61,7 @@ class CallHub:
         self._next_call_ref = 16777216
         self.auto_answer_devices: set[str] = set()
         self.media_hub = media_hub
+        self.ivr_dn = str(ivr_dn) if ivr_dn else None
 
     def register_session(self, session: SkinnySession) -> None:
         with self._lock:
@@ -131,6 +137,10 @@ class CallHub:
         self._try_complete_dial(call)
 
     def _try_complete_dial(self, call: SimCall) -> None:
+        if self.ivr_dn and call.dialed == self.ivr_dn:
+            self._start_ivr_call(call)
+            return
+
         callee = self.session_for_dn(call.dialed)
         if not callee or callee is call.caller:
             return
@@ -207,6 +217,70 @@ class CallHub:
                 name=f"auto-answer-{callee.device_name}",
                 daemon=True,
             ).start()
+
+    def _start_ivr_call(self, call: SimCall) -> None:
+        assert self.ivr_dn is not None
+        call.ivr = True
+        call.state = "ringing"
+
+        caller = call.caller
+        caller_name = caller.device_name
+        caller_dn = caller.directory_number
+
+        logger.info(
+            "IVR ring %s <- %s (%s) ref=%s",
+            self.ivr_dn,
+            caller_name,
+            caller_dn,
+            call.call_ref,
+        )
+
+        call.caller.send_many([
+            payloads.stop_tone(call.line, call.call_ref),
+            payloads.call_state(payloads.CALL_STATE_RINGOUT, call.line, call.call_ref),
+            payloads.call_info(
+                caller_name, caller_dn, IVR_DEVICE_NAME, self.ivr_dn,
+                line=call.line, call_ref=call.call_ref, call_type=2,
+            ),
+            payloads.display_prompt_status("Ring Out", call.line, call.call_ref),
+            payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=8),
+        ])
+
+        threading.Thread(
+            target=self._auto_connect_ivr,
+            args=(call,),
+            name=f"ivr-answer-{call.call_ref}",
+            daemon=True,
+        ).start()
+
+    def _auto_connect_ivr(self, call: SimCall) -> None:
+        import time
+
+        time.sleep(0.25)
+        if call.state == "ended":
+            return
+        self._connect_ivr(call)
+
+    def _connect_ivr(self, call: SimCall) -> None:
+        assert self.ivr_dn is not None
+        call.state = "connected"
+        caller = call.caller
+        caller_name = caller.device_name
+        caller_dn = caller.directory_number
+
+        logger.info("IVR connect ref=%s %s -> %s", call.call_ref, caller_dn, self.ivr_dn)
+
+        caller.send_many(
+            self._modern_connect_packets(
+                call,
+                caller,
+                caller_name=caller_name,
+                caller_dn=caller_dn,
+                callee_name=IVR_DEVICE_NAME,
+                callee_dn=self.ivr_dn,
+            )
+        )
+        caller.awaiting_media_ack = True
 
     @staticmethod
     def _legacy_ring_in_tail(call: SimCall) -> list[bytes]:
@@ -412,6 +486,22 @@ class CallHub:
         port = struct.unpack("<I", payload[8:12])[0]
         call.media_ports[id(session)] = port
         session.awaiting_media_ack = False
+
+        if call.ivr:
+            if session is not call.caller:
+                return
+            if self.media_hub and self.media_hub.start_call(call):
+                logger.info(
+                    "IVR media started ref=%s via SimMediaHub (%s)",
+                    call.call_ref,
+                    self.media_hub.mode,
+                )
+            else:
+                logger.warning(
+                    "IVR call ref=%s connected but no SimMediaHub (--rtp-sim-peer or --ivr-dn enables tone)",
+                    call.call_ref,
+                )
+            return
 
         if call.callee is None:
             return

@@ -82,6 +82,12 @@ def main() -> None:
         metavar="HZ",
         help="Tone frequency when --rtp-sim-peer tone (default: 1000)",
     )
+    parser.add_argument(
+        "--ivr-dn",
+        default=None,
+        metavar="DN",
+        help="Virtual auto-answer IVR DN (e.g. 9999); single phone can dial for sim RTP tone/loopback",
+    )
     parser.add_argument("-v", "--verbose", action="count", default=0)
     args = parser.parse_args()
 
@@ -103,6 +109,7 @@ def main() -> None:
         auto_answer=auto_answer or None,
         rtp_sim_peer=args.rtp_sim_peer,
         rtp_sim_tone_hz=args.rtp_sim_tone_hz,
+        ivr_dn=args.ivr_dn,
     )
 
     for mac in args.provision:

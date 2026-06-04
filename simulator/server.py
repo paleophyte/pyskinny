@@ -33,13 +33,19 @@ class SkinnySimulator:
         cip_port: int = 8088,
         rtp_sim_peer: str = "off",
         rtp_sim_tone_hz: float = 1000.0,
+        ivr_dn: str | None = None,
     ):
         self.host = host
         self.port = port
         self.server_name = server_name
         self.registry = DeviceRegistry(dn_start=dn_start)
+        self.ivr_dn = str(ivr_dn) if ivr_dn else None
+        if self.ivr_dn:
+            self.registry.reserve_dn(self.ivr_dn)
         media_hub = SimMediaHub(mode=rtp_sim_peer) if rtp_sim_peer != "off" else None
-        self.hub = CallHub(media_hub=media_hub)
+        if self.ivr_dn and media_hub is None:
+            media_hub = SimMediaHub(mode="tone")
+        self.hub = CallHub(media_hub=media_hub, ivr_dn=self.ivr_dn)
         self._media_hub = media_hub
         if auto_answer:
             for target in auto_answer:
@@ -111,10 +117,11 @@ class SkinnySimulator:
         self._sock.listen(32)
         bound = self._sock.getsockname()
         logger.info(
-            "Skinny simulator listening on %s:%s (DNs from %s)",
+            "Skinny simulator listening on %s:%s (DNs from %s%s)",
             bound[0],
             bound[1],
             self.registry._dn_start,
+            f", IVR DN {self.ivr_dn}" if self.ivr_dn else "",
         )
         if self.tftp:
             logger.info(
