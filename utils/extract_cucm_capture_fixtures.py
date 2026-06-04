@@ -23,6 +23,7 @@ GROUPS: dict[str, tuple[str, list[int]]] = {
         [141, 142, 143, 144, 145, 146, 147, 150, 151],
     ),
     "cm_call_open_rx": ("cm_call_from_pyskinny_to_7912.pcapng", [148]),
+    "cm_call_media": ("cm_call_from_pyskinny_to_7912.pcapng", [154, 155]),
 }
 
 

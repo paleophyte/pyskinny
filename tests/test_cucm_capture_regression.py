@@ -16,6 +16,7 @@ from simulator.cucm_legacy_assets import (
 from simulator.session import SkinnySession
 from tests.cucm_capture import (
     LINE,
+    PASS_THROUGH_PARTY_ID,
     REF_INCOMING_CALL,
     REF_NEW_CALL,
     assert_frame,
@@ -153,10 +154,40 @@ class TestAnswerConnect:
     def test_frame_matches_cucm(self, packets, frame, index):
         assert_frame("cm_call_answer", frame, packets[index])
 
-    def test_open_receive_channel_frame_present_in_fixture(self):
-        """Full OpenReceiveChannel body audit is #3; ensure fixture is committed."""
-        hex_str = load_fixture_group("cm_call_open_rx")["148"]
-        assert len(wire_from_hex(hex_str)) > 12
+class TestMediaPayloads:
+    """cm_call_from_pyskinny_to_7912.pcapng frames 148, 154, 155 — OpenRx / StartMedia / Ack."""
+
+    def test_open_receive_channel_matches_cucm(self):
+        assert_frame(
+            "cm_call_open_rx",
+            148,
+            payloads.open_receive_channel(REF_INCOMING_CALL),
+        )
+
+    def test_start_media_transmission_matches_cucm(self):
+        from tests.cucm_capture import (
+            MEDIA_PRECEDENCE,
+            MEDIA_REMOTE_IP,
+            MEDIA_REMOTE_PORT,
+        )
+
+        assert_frame(
+            "cm_call_media",
+            154,
+            payloads.start_media_transmission(
+                REF_INCOMING_CALL,
+                MEDIA_REMOTE_IP,
+                MEDIA_REMOTE_PORT,
+                precedence_value=MEDIA_PRECEDENCE,
+            ),
+        )
+
+    def test_open_receive_channel_ack_parses_7912_port(self):
+        pkt = wire_from_hex(load_fixture_group("cm_call_media")["155"])
+        parsed = payloads.parse_open_receive_channel_ack(pkt[12:])
+        assert parsed["status"] == 0
+        assert parsed["port"] == 16384
+        assert parsed["pass_through_party_id"] == PASS_THROUGH_PARTY_ID
 
 
 class TestMessageSequenceOrder:

@@ -13,7 +13,13 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures" / "cucm_frames.json"
 # CUCM call refs seen in lab pcaps
 REF_NEW_CALL = 0x0100001A
 REF_INCOMING_CALL = 0x0100001F
+PASS_THROUGH_PARTY_ID = 0x01000101
 LINE = 1
+
+# StartMedia remote endpoint from cm_call_media frame 154 (CUCM → 7912).
+MEDIA_REMOTE_IP = 467363338  # 10.102.219.27
+MEDIA_REMOTE_PORT = 60186
+MEDIA_PRECEDENCE = 184
 
 
 def load_fixture_group(group: str) -> dict[str, str]:

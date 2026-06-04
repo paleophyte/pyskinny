@@ -244,15 +244,25 @@ def dialed_number(number: str, line: int = 1, call_ref: int = 0) -> bytes:
     return pack_message(0x011D, body)
 
 
-def open_receive_channel(call_ref: int = 0, ptime_ms: int = 20) -> bytes:
+# CUCM pass-through party id seen on 7912 legacy media (OpenRx / StartMedia / Ack).
+PASS_THROUGH_PARTY_ID = 0x01000101
+
+
+def open_receive_channel(
+    call_ref: int = 0,
+    *,
+    ptime_ms: int = 20,
+    compression_type: int = 4,
+    pass_through_party_id: int = PASS_THROUGH_PARTY_ID,
+) -> bytes:
     from simulator.protocol import pack_message
 
     body = struct.pack(
         "<IIIIIIIIHH",
-        0,
-        0,
+        call_ref,
+        pass_through_party_id,
         ptime_ms,
-        0,
+        compression_type,
         0,
         0,
         call_ref,
@@ -270,27 +280,43 @@ def start_media_transmission(
     remote_port: int,
     *,
     ptime_ms: int = 20,
+    compression_type: int = 4,
+    pass_through_party_id: int = PASS_THROUGH_PARTY_ID,
+    precedence_value: int = 0,
 ) -> bytes:
     from simulator.protocol import pack_message
 
     body = struct.pack(
         "<IIIIIIIIHH",
-        0,
-        0,
+        call_ref,
+        pass_through_party_id,
         remote_ip,
         remote_port,
         ptime_ms,
+        compression_type,
+        precedence_value,
         0,
         0,
         0,
-        0,
-        1,
     )
-    body += struct.pack("<I", 0)
-    body += struct.pack("<I", call_ref)
-    body += struct.pack("<HH", 0, 0)
+    body += struct.pack("<IIIHH", 0, call_ref, 0, 0, 0)
     body += b"\x00" * 32
     return pack_message(0x008A, body)
+
+
+def parse_open_receive_channel_ack(payload: bytes) -> dict[str, int]:
+    """Parse OpenReceiveChannelAck (7912 sends 16 bytes; CM may send 20)."""
+    if len(payload) < 12:
+        raise ValueError(f"OpenReceiveChannelAck too short ({len(payload)} bytes)")
+    status, port = struct.unpack("<II", payload[0:4] + payload[8:12])
+    ip_raw = payload[4:8]
+    ip_int = struct.unpack("!I", ip_raw)[0]
+    out: dict[str, int] = {"status": status, "ip": ip_int, "port": port}
+    if len(payload) >= 16:
+        out["pass_through_party_id"] = struct.unpack("<I", payload[12:16])[0]
+    if len(payload) >= 20:
+        out["call_reference"] = struct.unpack("<I", payload[16:20])[0]
+    return out
 
 
 def config_stat_res(device_name: str, server_label: str, lines: int = 1, speed_dials: int = 0) -> bytes:
