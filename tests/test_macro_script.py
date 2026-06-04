@@ -1,5 +1,7 @@
 """Macro script parser tests."""
 
+from pathlib import Path
+
 from utils.macro_script import parse_macro_script, parse_switch_cases
 
 
@@ -25,3 +27,51 @@ def test_parse_switch_cases():
     assert cases["1"] == 10
     assert cases["2"] == 20
     assert default == 30
+
+
+def test_ivr_barge_in_stops_playback():
+    from simulator.ivr_macro_runner import SimIvrMacroRunner
+
+    class _Media:
+        def __init__(self):
+            self.stop_count = 0
+
+        def stop_playback(self, call_ref: int) -> bool:
+            self.stop_count += 1
+            return True
+
+        def play_wav(self, call_ref, path, **kwargs):
+            return True
+
+        def set_loopback(self, call_ref):
+            return True
+
+        def set_tone(self, call_ref):
+            return True
+
+    class _Caller:
+        def send(self, _packet):
+            pass
+
+    class _Call:
+        call_ref = 1
+        line = 1
+        caller = _Caller()
+
+    class _Hub:
+        media_hub = None
+
+        def end_call(self, **kwargs):
+            pass
+
+    media = _Media()
+    runner = SimIvrMacroRunner(
+        _Call(),
+        _Hub(),
+        media,
+        assets_dir=Path("."),
+        script_text="PLAY x.wav\n",
+    )
+    runner.submit_digit("1")
+    assert media.stop_count == 1
+    assert runner._digit_queue[0] == "1"

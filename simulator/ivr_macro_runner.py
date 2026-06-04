@@ -93,6 +93,8 @@ class SimIvrMacroRunner:
         self.kv["last_digit"] = digit
         self._digit_queue.append(digit)
         self._digit_event.set()
+        if self.media.stop_playback(self.call.call_ref):
+            logger.info("IVR barge-in ref=%s key=%r", self.call.call_ref, digit)
 
     def _take_digit(self) -> str | None:
         if self._digit_queue:
@@ -118,7 +120,14 @@ class SimIvrMacroRunner:
         logger.info("IVR PLAY ref=%s %s (%.1fs)", self.call.call_ref, path.name, delay)
         end = time.time() + delay
         while time.time() < end and not self._stop.is_set():
-            time.sleep(min(0.1, max(0.0, end - time.time())))
+            if self._digit_queue:
+                logger.debug(
+                    "IVR PLAY interrupted ref=%s after %.2fs (barge-in)",
+                    self.call.call_ref,
+                    delay - (end - time.time()),
+                )
+                break
+            time.sleep(min(0.05, max(0.0, end - time.time())))
 
     def _wait_digit(self, secs: float) -> str | None:
         if self._digit_queue:

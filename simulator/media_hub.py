@@ -241,6 +241,16 @@ class SimMediaHub:
                 leg.tx.send_wav(path, loop=False, gain_db=gain_db)
         return True
 
+    def stop_playback(self, call_ref: int) -> bool:
+        """Cut off prompt/tone RTP immediately (IVR barge-in)."""
+        sim_session = self._sessions.get(call_ref)
+        if not sim_session:
+            return False
+        for leg in sim_session.legs:
+            if leg.tx:
+                leg.tx.send_silence()
+        return True
+
     def stop_call(self, call_ref: int) -> None:
         sim_session = self._sessions.pop(call_ref, None)
         if not sim_session:
