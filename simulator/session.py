@@ -65,6 +65,7 @@ class SkinnySession:
         self._lines = 1
         self.device_type = 0
         self._legacy_phone = False
+        self._template_profile = "modern"
         self.active_call: SimCall | None = None
         self.awaiting_media_ack = False
 
@@ -150,12 +151,23 @@ class SkinnySession:
         if msg_id == MSG_CAPABILITIES_RES:
             return True
         if msg_id == MSG_BUTTON_TEMPLATE_REQ:
-            self.send(payloads.button_template_res(legacy=self._legacy_phone))
+            self.send(
+                payloads.button_template_res(
+                    legacy=self._template_profile == "legacy7912",
+                    cm2=self._template_profile == "cm2",
+                )
+            )
             return True
         if msg_id == MSG_SOFTKEY_TEMPLATE_REQ:
+            if self._template_profile == "cm2":
+                logger.debug("(%s) CM2 button phone — no SoftKeyTemplateRes", self.device_name)
+                return True
             self.send(payloads.softkey_template_res(legacy=self._legacy_phone))
             return True
         if msg_id == MSG_SOFTKEY_SET_REQ:
+            if self._template_profile == "cm2":
+                logger.debug("(%s) CM2 button phone — no SoftKeySetRes", self.device_name)
+                return True
             self.send(payloads.softkey_set_res(legacy=self._legacy_phone))
             if self._legacy_phone:
                 self.send(payloads.legacy_select_softkeys_idle())
@@ -231,7 +243,8 @@ class SkinnySession:
         self.device_name = info.device_name
         self.station_ip = info.station_ip
         self.device_type = info.device_type
-        self._legacy_phone = payloads.is_legacy_skinny_phone(info.device_type)
+        self._template_profile = payloads.phone_template_profile(info.device_type)
+        self._legacy_phone = self._template_profile == "legacy7912"
         self.directory_number = self.registry.assign(self.device_name)
         if self.tftp:
             self.tftp.write_device_config(self.device_name, self.directory_number)
@@ -242,7 +255,7 @@ class SkinnySession:
             self.directory_number,
             info.device_type,
             info.station_ip,
-            "legacy" if self._legacy_phone else "modern",
+            "legacy" if self._legacy_phone else self._template_profile,
         )
         self.send(payloads.register_ack())
         self.send(payloads.capabilities_req())

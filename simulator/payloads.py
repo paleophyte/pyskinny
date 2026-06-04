@@ -39,9 +39,33 @@ TONE_REMOTE_HOLD = 59
 # device_type from RegisterReq (see messages/generic.py DEVICE_TYPE_MAP)
 DEVICE_TYPE_7912 = 30007
 
+# CM2-era phones use ButtonTemplateRes only (no LCD softkeys).
+CM2_BUTTON_PHONE_TYPES = frozenset({
+    1,   # Cisco 30 SP+
+    5,   # Cisco 30 VIP
+    6,   # Cisco 7910
+    7,   # Cisco 7960
+    8,   # Cisco 7940
+    9,   # Cisco 7935
+    14,  # Virtual30SPplus
+})
+
 
 def is_legacy_skinny_phone(device_type: int) -> bool:
     return device_type == DEVICE_TYPE_7912
+
+
+def is_cm2_button_phone(device_type: int) -> bool:
+    return device_type in CM2_BUTTON_PHONE_TYPES
+
+
+def phone_template_profile(device_type: int) -> str:
+    """Simulator template set: cm2 | legacy7912 | modern."""
+    if is_legacy_skinny_phone(device_type):
+        return "legacy7912"
+    if is_cm2_button_phone(device_type):
+        return "cm2"
+    return "modern"
 
 
 def register_ack(keepalive: int = 30) -> bytes:
@@ -73,7 +97,11 @@ def normalize_skinny_packet(packet: bytes) -> bytes:
     return struct.pack("<III", expected, ver, mid) + body
 
 
-def button_template_res(*, legacy: bool = False) -> bytes:
+def button_template_res(*, legacy: bool = False, cm2: bool = False) -> bytes:
+    if cm2:
+        from simulator.cm2_assets import CM2_BUTTON_TEMPLATE_RES
+
+        return normalize_skinny_packet(CM2_BUTTON_TEMPLATE_RES)
     if legacy:
         from simulator.cucm_legacy_assets import LEGACY_BUTTON_TEMPLATE_RES
 

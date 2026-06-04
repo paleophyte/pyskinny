@@ -1,15 +1,23 @@
-name: Integration (lab CUCM)
+name: Integration (lab CallManager)
 
-# Self-hosted runner on the lab network; cloud runners cannot reach private CUCM IPs.
+# Self-hosted runner on the lab network; cloud runners cannot reach private CM IPs.
 on:
   workflow_dispatch:
     inputs:
-      cucm_server:
-        description: CUCM IP or hostname
-        required: true
+      integration_labs:
+        description: Comma-separated labs (cm2, cm43)
+        required: false
+        default: "cm2,cm43"
+      cm2_server:
+        description: CM2 server IP
+        required: false
+        default: "10.0.0.11"
+      cm43_server:
+        description: CM4.3 / CUCM server IP
+        required: false
         default: "10.0.0.180"
-      test_mac:
-        description: SCCP device MAC (no separators)
+      cm43_mac_a:
+        description: CM4.3 device A MAC (no separators)
         required: false
         default: "222233334444"
 
@@ -40,9 +48,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run integration tests
+      - name: Run live integration tests
         env:
-          PYSKINNY_CUCM_SERVER: ${{ inputs.cucm_server }}
-          PYSKINNY_TEST_MAC: ${{ inputs.test_mac }}
+          PYSKINNY_INTEGRATION_LABS: ${{ inputs.integration_labs }}
+          PYSKINNY_CM2_SERVER: ${{ inputs.cm2_server }}
+          PYSKINNY_CM43_SERVER: ${{ inputs.cm43_server }}
+          PYSKINNY_CM43_MAC_A: ${{ inputs.cm43_mac_a }}
           PYSKINNY_SKIP_TFTP: "1"
-        run: pytest -m integration -v --no-audio
+        run: pytest tests/test_integration_live.py -m integration -v --no-audio

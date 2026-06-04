@@ -70,6 +70,17 @@ def test_resolve_call_target_prefers_connected_for_hold_end():
 
 
 @patch("client.handle_softkey_press")
+def test_press_softkey_uses_default_events_without_template(mock_softkey):
+    state = PhoneState(server="127.0.0.1", mac="AABBCCDDEEFF", model="7970")
+    state.enable_audio = False
+    state.softkey_template = {}
+    client = SCCPClient(state)
+    mark_call_connected(client, call_reference=16777221, line_instance=1)
+    client.press_softkey("Hold")
+    mock_softkey.assert_called_once_with(client, 1, 3, 16777221)
+
+
+@patch("client.handle_softkey_press")
 def test_press_softkey_uses_resolved_call_reference(mock_softkey):
     client = _make_client(call_ref=99988877)
     client.press_softkey("Hold")

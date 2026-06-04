@@ -7,6 +7,7 @@ from utils.call_management import (
     apply_call_state_from_skinny,
     mark_call_ended,
     mark_call_connected,
+    mark_call_ringing,
     next_synthetic_call_reference,
     update_call_state,
 )
@@ -261,6 +262,18 @@ def parse_set_ringer(client, payload):
     # logger.info(f"[RECV] SetRinger ringMode: {ring_mode}, ringDuration: {ring_duration}, lineInstance: {line_instance}, callReference: {call_reference}")
     logger.info(f"[RECV] SetRinger")
 
+    if ring_mode:
+        ref = call_reference or getattr(client.state, "selected_call_reference", None)
+        if not ref and client.state.active_calls_list:
+            ref = client.state.active_calls_list[-1]
+        if ref:
+            mark_call_ringing(
+                client,
+                ref,
+                line_instance or 1,
+                source="SetRinger",
+            )
+
 
 @register_handler(0x0088, "SetSpeakerMode")
 def parse_set_speaker_mode(client, payload):
@@ -506,7 +519,19 @@ def parse_call_info(client, payload):
     elif call_type == 2:
         call_state, call_state_name = 3, "RingOut"
     else:
-        call_state, call_state_name = 3, "CallInfo"
+        # CM2 CallInfo omits callType; infer direction from local directory numbers.
+        local_dns = {
+            (row.get("line_dir_number") or "").strip()
+            for row in client.state.lines.values()
+        }
+        cp = (calling_party or "").strip()
+        cdp = (called_party or "").strip()
+        if cdp in local_dns:
+            call_state, call_state_name = 4, "RingIn"
+        elif cp in local_dns:
+            call_state, call_state_name = 3, "RingOut"
+        else:
+            call_state, call_state_name = 3, "CallInfo"
 
     key = update_call_state(
         client,
@@ -529,6 +554,17 @@ def parse_call_info(client, payload):
     client.state.active_call = True
     client.state.call_active = True
     client.events.call_ended.clear()
+
+    if call_state == 4:
+        mark_call_ringing(
+            client,
+            call_reference,
+            line_instance or 1,
+            call_state=4,
+            source="CallInfo",
+        )
+    elif call_state == 3 and call_state_name == "RingOut":
+        client.state.selected_call_reference = key
 
     # # Track call lifecycle
     # call_state_name = "RingIn"
@@ -599,11 +635,19 @@ def parse_start_media_transmission(client, payload):
         call_reference = (
             getattr(client.state, "selected_call_reference", None)
             or getattr(client.state, "active_call_reference", None)
-            or 0
+            or (client.state.active_calls_list[-1] if client.state.active_calls_list else 0)
         )
 
     client.state.media_active = True
     client.events.media_started.set()
+
+    if call_reference:
+        mark_call_connected(
+            client,
+            call_reference=call_reference,
+            line_instance=getattr(client.state, "active_call_line_instance", None) or 1,
+            source="StartMediaTransmission",
+        )
 
     client.state.start_media_transmission[str(call_reference)] = {
         "conferenceId": conference_id,
@@ -770,36 +814,45 @@ def parse_stop_media_reception(client, payload):    # Wireshark dissector doesn'
 
 @register_handler(0x0105, "OpenReceiveChannel")
 def parse_open_receive_channel(client, payload):
-    conference_id, pass_through_party_id, milli_second_packet_size, compression_type, ec_value, g723_bitrate, call_reference, algorithm_id, key_len, salt_len = struct.unpack("<IIIIIIIIHH", payload[:36])
-    key_bytes = payload[36:52]                                                                                           # 16 bytes
-    salt_bytes = payload[52:68]                                                                                          # 16 bytes
+    buf = Buf(payload)
+
+    conference_id = buf.read_u32(0)
+    pass_through_party_id = buf.read_u32(0)
+    milli_second_packet_size = buf.read_u32(20)
+    compression_type = buf.read_u32(0)
+    ec_value = buf.read_u32(0)
+    g723_bitrate = buf.read_u32(0)
+    call_reference = buf.read_u32(0) if buf.remaining() >= 4 else 0
+    algorithm_id = buf.read_u32(0) if buf.remaining() >= 4 else 0
+    key_len = buf.read_u16(0) if buf.remaining() >= 2 else 0
+    salt_len = buf.read_u16(0) if buf.remaining() >= 2 else 0
+
+    key_bytes = buf.read_bytes(16) if buf.remaining() >= 16 else b""
+    salt_bytes = buf.read_bytes(16) if buf.remaining() >= 16 else b""
 
     key = clean_bytes(key_bytes)
     salt = clean_bytes(salt_bytes)
-    # logger.info(f"[RECV] OpenReceiveChannel conferenceId: {conference_id}, passThroughPartyId: {pass_through_party_id}, milliSecondPacketSize: {milli_second_packet_size}, compressionType: {compression_type}, ecValue: {ec_value}, g723Bitrate: {g723_bitrate}, callReference: {call_reference}, algorithmId: {algorithm_id}, keyLen: {key_len}, saltLen: {salt_len}, key: {key}, salt: {salt}")
+
+    if not call_reference:
+        raw = (
+            getattr(client.state, "selected_call_reference", None)
+            or getattr(client.state, "active_call_reference", None)
+            or (client.state.active_calls_list[-1] if client.state.active_calls_list else 0)
+        )
+        try:
+            call_reference = int(raw or 0)
+        except (TypeError, ValueError):
+            call_reference = 0
+
     logger.info(f"[RECV] OpenReceiveChannel")
 
-    # trace_data = {
-    #     "conferenceId": conference_id,
-    #     "passThroughPartyId": pass_through_party_id,
-    #     "milliSecondPacketSize": milli_second_packet_size,
-    #     "compressionType": compression_type,
-    #     "ecValue": ec_value,
-    #     "g723Bitrate": g723_bitrate,
-    #     "callReference": call_reference,
-    #     "algorithmId": algorithm_id,
-    #     "keyLen": key_len,
-    #     "saltLen": salt_len,
-    #     "key": key,
-    #     "salt": salt,
-    # }
-
-    # Call Trace Logging
-    # message_info = get_current_message_info(message_table)
-    # # trace = shared_state.get("trace", print)
-    # trace(call_reference, message_info, shared_state, line_instance=None, log=log, override_message_data=trace_data)
-
-    send_open_receive_channel_ack(client, {"passThroughPartyId": pass_through_party_id, "callReference": call_reference})
+    send_open_receive_channel_ack(
+        client,
+        {
+            "passThroughPartyId": int(pass_through_party_id),
+            "callReference": int(call_reference),
+        },
+    )
 
 
 @register_handler(0x0034, "OpenReceiveChannelAck")
@@ -816,7 +869,7 @@ def send_open_receive_channel_ack(client, payload):
     client.state._rtp_rx = rx
     port_number = rx.port
 
-    call_reference = payload["callReference"]
+    call_reference = int(payload["callReference"] or 0)
     rec = _start_rtp_recorder(client, call_reference)
     if rec is not None:
         rx.attach_recorder(rec)
@@ -826,7 +879,7 @@ def send_open_receive_channel_ack(client, payload):
 
     call_manager_host_ip = get_local_ip(client.state.server)
     station_ip = ip_to_int(call_manager_host_ip)  # still in int form
-    pass_through_party_id = payload["passThroughPartyId"]
+    pass_through_party_id = int(payload["passThroughPartyId"] or 0)
     station_ip_packed = struct.pack("!I", station_ip)  # Big-endian (network byte order)
 
     data = struct.pack(

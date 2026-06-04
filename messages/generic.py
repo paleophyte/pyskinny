@@ -10,6 +10,56 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# Soft-key event IDs for phones with LCD softkeys (7940+ era). CM2 and other
+# button-only phones never receive SoftKeyTemplateRes; they use ButtonTemplateRes
+# and Stimulus (see handle_button_press) instead.
+DEFAULT_SOFTKEY_EVENTS = {
+    "Redial": 1,
+    "NewCall": 2,
+    "Hold": 3,
+    "Transfer": 4,
+    "CfwdAll": 5,
+    "CfwdBusy": 6,
+    "CfwdNoAnswer": 7,
+    "BackSpace": 8,
+    "EndCall": 9,
+    "Resume": 10,
+    "Answer": 11,
+    "Info": 12,
+    "Confrn": 13,
+    "Park": 14,
+    "Join": 15,
+    "MeetMe": 16,
+    "Pickup": 17,
+    "GrpPickup": 18,
+    "Monitor": 19,
+    "CallBack": 20,
+    "Select": 21,
+    "Page": 22,
+    "Exit": 23,
+    "DirTrfr": 24,
+    "EditDial": 25,
+    "TrnsfVM": 26,
+    "Intrude": 27,
+    "Private": 28,
+    "RmLstC": 29,
+    "Save": 30,
+    "Delete": 31,
+    "Dial": 32,
+    "ConfList": 33,
+    "SelectList": 34,
+    "Barge": 35,
+    "cBarge": 36,
+    "ReDial": 37,
+    "DND": 38,
+    "DivAll": 39,
+    "CallInfo": 40,
+    "Update": 41,
+    "Cancel": 42,
+    "CallSelect": 43,
+}
+
+
 SOFTKEY_TEMPLATE_INDEXES = {
     0: "Undefined",
     1: "Redial",

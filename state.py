@@ -27,6 +27,7 @@ class PhoneState:
         self.client_ip = None
         self.is_registered = Event()
         self.is_unregistered = Event()
+        self.register_reject_reason = None
 
         # RegisterAck
         self.keepalive_interval = 30

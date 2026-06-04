@@ -7,7 +7,16 @@ from messages.register import send_register_req, send_unregister_req, build_ip_p
 from messages.keepalive import send_keepalive_req
 from state import PhoneState
 from utils.tftp import get_device_config_via_tftp
-from messages.generic import handle_softkey_press, handle_keypad_press, handle_button_press, TONE_FOLDER, TONE_LOOKUP, send_onhook, send_offhook
+from messages.generic import (
+    DEFAULT_SOFTKEY_EVENTS,
+    handle_softkey_press,
+    handle_keypad_press,
+    handle_button_press,
+    TONE_FOLDER,
+    TONE_LOOKUP,
+    send_onhook,
+    send_offhook,
+)
 from audio_worker import LoopingAudioWorker, NullAudioWorker
 import os
 import threading
@@ -47,6 +56,7 @@ class SCCPClient:
             call_connected=threading.Event(),  # set when Connected
             media_started=threading.Event(),  # set on StartMediaTransmission
             call_ended=threading.Event(),   # set when Disconnected
+            register_rejected=threading.Event(),
         )
         self.dtmf = SimpleNamespace(
             event=threading.Event(),
@@ -411,19 +421,65 @@ class SCCPClient:
 
         return active_line, numeric_ref or 0
 
+    def uses_softkeys(self) -> bool:
+        """True when CM sent SoftKeyTemplateRes (7940/7960-class LCD softkeys)."""
+        return bool(self.state.softkey_template)
+
+    def uses_physical_buttons(self) -> bool:
+        """True for CM2-era and other button-template phones without softkey sets."""
+        return bool(self.state.button_template) and not self.state.softkey_template
+
+    def press_line_button(self, line_instance: int = 1) -> None:
+        """Press a Line button (Stimulus type 9) — off-hook / answer on button phones."""
+        handle_button_press(self, 9, line_instance)
+
+    def _resolve_softkey_event(self, softkey_name: str) -> int | None:
+        for v in (self.state.softkey_template or {}).values():
+            if v.get("label") == softkey_name:
+                return int(v["event"])
+        return DEFAULT_SOFTKEY_EVENTS.get(softkey_name)
+
     def press_softkey(self, softkey_name, line=1, call_ref=0):
-        key_defs = self.state.softkey_template or {}
         active_line, active_call_ref = self.resolve_call_target(
             line, call_ref, softkey_name=softkey_name
         )
-        for v in key_defs.values():
-            if v.get("label") == softkey_name:
-                if softkey_name == "EndCall":
-                    from messages.phone import end_local_call
-                    end_local_call(self, source="local-endcall", call_ref=active_call_ref)
-                handle_softkey_press(self, active_line, v["event"], active_call_ref)
-                return
-        self.logger.warning(f"({self.state.device_name}) No such softkey {softkey_name}")
+        event = self._resolve_softkey_event(softkey_name)
+        if event is None:
+            self.logger.warning(f"({self.state.device_name}) No such softkey {softkey_name}")
+            return
+        if softkey_name == "EndCall":
+            from messages.phone import end_local_call
+            end_local_call(self, source="local-endcall", call_ref=active_call_ref)
+        handle_softkey_press(self, active_line, event, active_call_ref)
+
+    def place_call(self, number: str, *, line: int = 1, pause: float = 0.35) -> None:
+        """Place an outbound call: NewCall softkey, or Line button + dial on button phones."""
+        if self.uses_softkeys():
+            self.press_softkey("NewCall", line=line)
+        else:
+            self.press_line_button(line)
+        time.sleep(pause)
+        self.dial_digits(number, line=line)
+
+    def dial_digits(self, number: str, *, line: int = 1, call_ref: int = 0) -> None:
+        for ch in number:
+            if ch == "*":
+                code = 0x0E
+            elif ch == "#":
+                code = 0x0F
+            elif ch.isdigit():
+                code = int(ch)
+            else:
+                continue
+            handle_keypad_press(self, line, code, call_ref)
+            time.sleep(0.05)
+
+    def answer_call(self, *, line: int = 1) -> None:
+        """Answer: Answer softkey on softkey phones, Line button on button-template phones."""
+        if self.uses_softkeys():
+            self.press_softkey("Answer", line=line)
+        else:
+            self.press_line_button(line)
 
     def _wait_new_call_connected(self, refs_before, timeout: float) -> bool:
         """Wait until a call ref not in *refs_before* reaches Connected (state 5)."""

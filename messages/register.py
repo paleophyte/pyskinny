@@ -154,6 +154,8 @@ def parse_register_reject(client, payload):
     error = clean_bytes(error_bytes)
 
     logger.error(f"({client.state.device_name}) [RECV] RegisterReject {error}")
+    client.state.register_reject_reason = error
+    client.events.register_rejected.set()
 
     client.running = False
     client.state.is_unregistered.set()

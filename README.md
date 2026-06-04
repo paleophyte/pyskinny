@@ -42,19 +42,31 @@ pytest -m "not integration" -v --no-audio
 
 **Unit tests** (`.github/workflows/test.yml`): runs on every push/PR to `main` on Ubuntu with Python 3.11 and 3.12. Command: `pytest -m "not integration" -v --no-audio`.
 
-**Integration tests** (`.github/workflows/integration.yml`): manual `workflow_dispatch` on a **self-hosted** runner in the lab network (cloud runners cannot reach private CUCM IPs). Set `PYSKINNY_CUCM_SERVER` via the workflow input.
+**Integration tests** (`.github/workflows/integration.yml`): manual `workflow_dispatch` on a **self-hosted** runner in the lab network. Targets **CM2** and/or **CM4.3** via `tests/test_integration_live.py`.
 
-### Integration (lab CUCM)
+### Integration (live CM labs)
 
-```bash
-# PowerShell
-$env:PYSKINNY_CUCM_SERVER = "10.0.0.180"
-$env:PYSKINNY_TEST_MAC = "222233334444"   # ext 1003; use 222233334445/46 for 1010/1011
-$env:PYSKINNY_SKIP_TFTP = "1"            # faster; set 0 to exercise TFTP
-pytest -m integration -v
+```powershell
+# All labs (built-in server IPs — override with PYSKINNY_CM41_SERVER etc.)
+$env:PYSKINNY_INTEGRATION_LABS = "cm2,cm31,cm33,cm41,cm43"
+$env:PYSKINNY_SKIP_TFTP = "1"
+pytest tests/test_integration_live.py -m integration -v --no-audio
+
+# Single lab
+pytest tests/test_integration_live.py -m "integration and cm43" -v --no-audio
 ```
 
-Only one SCCP client can hold a MAC at a time — stop consoles/macros before running integration tests.
+| Lab | Default IP | Model | Identity |
+|-----|------------|-------|----------|
+| cm2 | 10.0.0.11 | Virtual30SPplus | pyskinny01–03 |
+| cm31 | 10.0.0.181 | 7960 | SEP + MAC |
+| cm33 | 10.0.0.182 | 7970 | SEP + MAC |
+| cm41 | 10.0.0.180 | 7970 | SEP + MAC |
+| cm43 | 100.69.0.100 | 7970 | SEP + MAC |
+
+Shared MACs: `222233334444`–`446`. Disable a lab: `PYSKINNY_CM33_DISABLE=1`.
+
+Only one SCCP client can hold a device/MAC at a time — stop consoles before running integration tests.
 
 Simulator tests (no CUCM):
 
