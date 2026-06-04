@@ -173,7 +173,7 @@ pytest -m "not integration" -v
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 | Symptom | Check |
 |---------|--------|
