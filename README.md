@@ -36,18 +36,15 @@ pip install -r requirements.txt -r requirements-dev.txt
 pytest -m "not integration" -v
 ```
 
+**Lab cookbook:** step-by-step simulator scenarios (3 consoles, IVR macro, admin Reset, second call) — [docs/lab-cookbook.md](docs/lab-cookbook.md).
+
 ### CI (GitHub Actions)
 
-| Workflow | When | Runner |
-|----------|------|--------|
-| **Tests** (`.github/workflows/test.yml`) | Every push/PR to `main` | GitHub-hosted — unit tests on Python 3.11 and 3.12 |
-| **Integration (lab CUCM)** (`.github/workflows/integration.yml`) | Manual (**Actions → Run workflow**) | **Self-hosted** machine on your lab LAN |
+Planned: unit tests on push/PR to `main` (Python 3.11+). Until that lands, run `pytest -m "not integration" -v` locally before pushing.
 
-Cloud runners cannot reach private CUCM addresses (e.g. `10.0.0.180`). For integration CI, install a [self-hosted runner](https://docs.github.com/en/actions/hosting-your-own-runners) on a host that can reach CUCM, then run the integration workflow from the GitHub UI.
+Integration tests against a lab CUCM use a **self-hosted** runner (cloud runners cannot reach private CUCM IPs). Manual workflow only when a self-hosted runner is configured.
 
-Integration workflow inputs default to the lab phones documented below (`222233334444` / `445` / `446`).
-
-Integration tests against a lab CUCM (registers as a configured SEP device):
+### Integration (lab CUCM)
 
 ```bash
 # PowerShell
@@ -399,7 +396,9 @@ phone# set auto_connect true
 phone# connect
 ```
 
-Options: `--port`, `--dn-start`, `--host`, `--name`, `--no-tftp`, `--tftp-port`, `--tftp-root`, `--advertise-host`, `--provision MAC`, `--auto-answer MAC`, `--auto-answer-all`.
+Options: `--port`, `--dn-start`, `--host`, `--name`, `--no-tftp`, `--tftp-port`, `--tftp-root`, `--advertise-host`, `--provision MAC`, `--auto-answer MAC`, `--auto-answer-all`, `--ivr-dn`, `--admin-port` (default **8090**, web UI for Reset/Restart/bulk actions), `--rtp-sim-peer`.
+
+**Full lab walkthrough:** [docs/lab-cookbook.md](docs/lab-cookbook.md) (three consoles, IVR macro, admin reconnect, second call while on hold).
 
 ### TFTP configs
 
@@ -530,15 +529,27 @@ Wireshark on the sim host:
 ---
 
 ## Roadmap / TODO / Ideas
-- [x] Add ability to answer calls (and implement auto-answer) to run_cli.py
-- [ ] Try to add better call handling to run_cli.py (or to base SCCPClient). It's currently very difficult to manage multiple calls (i.e., place a call on hold and then dial a second number)
-- [x] CallManager simulator (lightweight CM server that phones can register to)
-- [x] Simulator: outbound/inbound call signaling between two registered clients
-- [x] Simulator: blind transfer (Transfer → dial → Transfer)
+
+See also [docs/lab-cookbook.md](docs/lab-cookbook.md) for the current simulator lab.
+
+**Done (simulator / client)**
+- [x] CallManager simulator (register, TFTP, calls between clients)
+- [x] Simulator blind transfer
+- [x] Multi-call: hold, second call while on hold, call-ref tracking
+- [x] Simulator admin UI (Reset/Restart, bulk actions, end call, provision)
+- [x] `run_console` auto-reconnect after Reset/Restart
+- [x] IVR: barge-in, macro transfers, virtual `--ivr-dn`
+- [x] Console / CLI / macro softphones; auto-answer
+
+**Next**
+- [ ] GitHub Actions CI (unit tests on push)
+- [ ] `pyproject.toml` / `pip install pyskinny`
+
+**Later**
+- [ ] Consulted transfer / conference (sim + client)
+- [ ] CM2 CallInfo / synthetic ref hardening (when CM2 lab available)
+- [ ] Optional mini web UI for phone remote control
 - [ ] SIP phone support
-- [x] Console based "GUI" SCCP Client
-- [ ] Wrap into a small **package** (`pip install pyskinny`)
-- [ ] Optional TUI/mini web UI for screenshots + actions
 
 ---
 

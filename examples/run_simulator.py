@@ -114,7 +114,7 @@ def main() -> None:
         type=int,
         default=8090,
         metavar="PORT",
-        help="Web admin UI port for phone tonreset/restart (0=disable, default: 8090)",
+        help="Web admin UI port for Reset/Restart/bulk (0=disable, default: 8090)",
     )
     parser.add_argument(
         "--no-admin",
