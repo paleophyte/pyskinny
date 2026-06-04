@@ -151,6 +151,7 @@ class PhoneState:
         self.rtp_tone_hz = 1000.0
         self.rtp_record = False
         self.rtp_record_dir = "logs/rtp"
+        self.rtp_pt_override = None
 
         # Key Value storage
         self.kv_dict = {}
@@ -349,18 +350,38 @@ def build_state_from_args(args) -> PhoneState:
 
 def apply_media_options(state: PhoneState, args, cfg: dict | None) -> None:
     """Apply optional RTP / audio flags from CLI args or config file."""
+    if getattr(args, "no_audio", False):
+        state.enable_audio = False
+
+    play_mode = getattr(args, "rtp_play_mode", None)
+    if cfg and cfg.get("rtp_play_mode"):
+        play_mode = cfg["rtp_play_mode"]
+    if getattr(args, "rtp_mic", False):
+        play_mode = "mic"
+    if getattr(args, "rtp_tone", False):
+        play_mode = "tone"
+    wav_path = getattr(args, "rtp_wav", None) or (cfg.get("rtp_wav") if cfg else None)
+    if wav_path:
+        play_mode = str(wav_path)
+    if play_mode == "loopback":
+        state.rtp_loopback = True
+    elif play_mode:
+        state.kv_dict["audio_play_mode"] = play_mode
+
     if cfg:
         if cfg.get("rtp_loopback"):
             state.rtp_loopback = True
         if cfg.get("rtp_loopback_monitor"):
             state.rtp_loopback_monitor = True
+        if cfg.get("no_audio"):
+            state.enable_audio = False
     if getattr(args, "rtp_loopback", False):
         state.rtp_loopback = True
     if getattr(args, "rtp_loopback_monitor", False):
         state.rtp_loopback_monitor = True
     if cfg and cfg.get("rtp_tone"):
         state.rtp_tone = True
-    if getattr(args, "rtp_tone", False):
+    if getattr(args, "rtp_tone", False) and play_mode is None:
         state.rtp_tone = True
     if cfg and cfg.get("rtp_tone_hz") is not None:
         state.rtp_tone_hz = float(cfg["rtp_tone_hz"])
@@ -376,3 +397,8 @@ def apply_media_options(state: PhoneState, args, cfg: dict | None) -> None:
     record_dir = getattr(args, "rtp_record_dir", None)
     if record_dir:
         state.rtp_record_dir = str(record_dir)
+    pt = getattr(args, "rtp_pt", None)
+    if pt is not None:
+        state.rtp_pt_override = int(pt)
+    elif cfg and cfg.get("rtp_pt") is not None:
+        state.rtp_pt_override = int(cfg["rtp_pt"])

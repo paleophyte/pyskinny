@@ -72,10 +72,22 @@ def test_apply_media_options_tone_and_record():
     args = type(
         "Args",
         (),
-        {"rtp_tone": True, "rtp_tone_hz": 440.0, "rtp_record": True, "rtp_record_dir": "tmp/rec"},
+        {
+            "rtp_tone": True,
+            "rtp_tone_hz": 440.0,
+            "rtp_record": True,
+            "rtp_record_dir": "tmp/rec",
+            "rtp_mic": False,
+            "rtp_wav": None,
+            "rtp_play_mode": None,
+            "rtp_loopback": False,
+            "rtp_loopback_monitor": False,
+            "no_audio": False,
+            "rtp_pt": None,
+        },
     )()
     apply_media_options(state, args, None)
-    assert state.rtp_tone is True
+    assert state.kv_dict.get("audio_play_mode") == "tone"
     assert state.rtp_tone_hz == 440.0
     assert state.rtp_record is True
     assert state.rtp_record_dir == "tmp/rec"

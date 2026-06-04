@@ -8,12 +8,48 @@ from utils.call_management import update_call_state, mark_call_ended, mark_call_
 from utils.client import get_local_ip, ip_to_int, _keypad_code_to_char
 from audio_worker import RTPReceiver, RTPSender, wire_rtp_loopback, socket
 from utils.rtp_record import RTPRecorder, rtp_record_base_path
+from utils.media_codecs import codec_label, resolve_rtp_payload_type
 import logging
 logger = logging.getLogger(__name__)
 
 
 def _truthy(val) -> bool:
     return str(val).lower() in ("1", "true", "yes", "on")
+
+
+def _rtp_pt_override(client) -> int | None:
+    kv = client.state.kv_dict.get("rtp_pt")
+    if kv is not None:
+        try:
+            return int(kv)
+        except (TypeError, ValueError):
+            pass
+    override = getattr(client.state, "rtp_pt_override", None)
+    return int(override) if override is not None else None
+
+
+def _resolve_tx_payload_type(client, compression_type: int) -> tuple[int, bool]:
+    pt, spec, used_fallback = resolve_rtp_payload_type(
+        compression_type,
+        override_pt=_rtp_pt_override(client),
+    )
+    if _rtp_pt_override(client) is not None:
+        return pt, False
+    if spec.compression_type != compression_type or used_fallback:
+        logger.warning(
+            "Skinny compression_type=%s (%s) -> RTP PT=%s%s",
+            compression_type,
+            codec_label(compression_type),
+            pt,
+            " (fallback)" if used_fallback else "",
+        )
+    elif not spec.encode_supported:
+        logger.warning(
+            "Skinny codec %s (PT=%s) is not encoded yet; TX may not match remote",
+            spec.name,
+            pt,
+        )
+    return pt, spec.encode_supported
 
 
 def _rtp_loopback_enabled(client) -> bool:
@@ -626,7 +662,7 @@ def parse_start_media_transmission(client, payload):
 
     remote_ip = socket.inet_ntoa(struct.pack("<I", remote_ip_addr))
     ptime = milli_second_packet_size or 20
-    pt = 0
+    pt, tx_supported = _resolve_tx_payload_type(client, compression_type)
 
     tx = RTPSender(
         remote_ip,
@@ -636,7 +672,10 @@ def parse_start_media_transmission(client, payload):
         log=client.logger,
     )
     tx.start()
-    _configure_rtp_sender(client, tx)
+    if tx_supported:
+        _configure_rtp_sender(client, tx)
+    else:
+        logger.warning("RTP TX left on silence (codec not supported for encoding)")
 
     client.state._rtp_tx = tx
     _attach_recorder_to_media(client, call_reference)
@@ -651,8 +690,8 @@ def parse_start_media_transmission(client, payload):
     logger.info(
         f"[RECV] StartMediaTransmission "
         f"remote={remote_ip}:{remote_port_number} "
-        f"ptime={ptime} codec={compression_type} "
-        f"call_ref={call_reference}"
+        f"ptime={ptime} codec={compression_type} ({codec_label(compression_type)}) "
+        f"rtp_pt={pt} call_ref={call_reference}"
     )
 
 

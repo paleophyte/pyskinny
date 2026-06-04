@@ -2,6 +2,7 @@ import argparse
 from ui.console import ConsoleApp
 import curses
 import logging
+from utils.cli_media import add_media_cli_args
 from utils.logs import configure_logging_from_verbose
 from utils.client import write_json_to_file
 
@@ -16,39 +17,7 @@ def main():
     parser.add_argument("--line", type=int, default=1, help="Line instance to use for keypad/softkeys")
     parser.add_argument("--config", action="store_true", help="Load connection details from examples/cli.config")
     parser.add_argument("--skip_tftp", action="store_true", help="Skip TFTP file download")
-    parser.add_argument(
-        "--rtp-loopback",
-        action="store_true",
-        help="Echo received RTP back to the remote party (for media troubleshooting)",
-    )
-    parser.add_argument(
-        "--rtp-loopback-monitor",
-        action="store_true",
-        help="With --rtp-loopback, also play received RTP on the local speaker",
-    )
-    parser.add_argument(
-        "--rtp-tone",
-        action="store_true",
-        help="Send a continuous test tone on RTP TX instead of silence",
-    )
-    parser.add_argument(
-        "--rtp-tone-hz",
-        type=float,
-        default=None,
-        metavar="HZ",
-        help="Test tone frequency in Hz (default: 1000)",
-    )
-    parser.add_argument(
-        "--rtp-record",
-        action="store_true",
-        help="Record RTP RX/TX to WAV files under logs/rtp/",
-    )
-    parser.add_argument(
-        "--rtp-record-dir",
-        default=None,
-        metavar="DIR",
-        help="Directory for RTP recordings (default: logs/rtp)",
-    )
+    add_media_cli_args(parser)
     parser.add_argument("-v", "--verbose", action="count", default=0,
                         help="Increase output verbosity (-v = warning, -vv = message, -vvv = info, -vvvv = debug)")
     args = parser.parse_args()
