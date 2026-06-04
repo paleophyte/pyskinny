@@ -101,10 +101,95 @@ class SCCPClient:
         except Exception:
             pass
 
+        self._close_skinny_socket(send_unregister=True)
+
+        for t in self._threads:
+            if t.is_alive():
+                t.join(timeout=1.5)
+
+        try:
+            self.audio.close()
+        except Exception:
+            pass
+
+    def reregister_from_cm(self, *, hard: bool) -> None:
+        """Handle CUCM Reset (hard) or Restart (soft) — TFTP + new RegisterReq."""
+        label = "Reset" if hard else "Restart"
+        if getattr(self, "_reregister_lock", None) is None:
+            self._reregister_lock = threading.Lock()
+        if not self._reregister_lock.acquire(blocking=False):
+            self.logger.debug(f"({self.state.device_name}) {label} already in progress")
+            return
+
+        def worker() -> None:
+            try:
+                self._perform_cm_reregister(hard=hard, label=label)
+            finally:
+                self._reregister_lock.release()
+
+        threading.Thread(
+            target=worker,
+            name=f"pyskinny-cm-{label.lower()}",
+            daemon=True,
+        ).start()
+
+    def _perform_cm_reregister(self, *, hard: bool, label: str) -> None:
+        self.logger.info(f"({self.state.device_name}) CM {label} — re-registering")
+        try:
+            if self.state.call_active or self.state.active_calls_list:
+                try:
+                    self.press_softkey("EndCall")
+                    time.sleep(0.75)
+                except Exception:
+                    pass
+
+            try:
+                from messages.phone import _teardown_local_media
+                _teardown_local_media(self)
+            except Exception:
+                pass
+
+            self.running = False
+            self._stop_event.set()
+            self._close_skinny_socket(send_unregister=False)
+
+            for t in list(self._threads):
+                if t.is_alive():
+                    t.join(timeout=2.0)
+
+            self._stop_event.clear()
+            self.state.is_registered.clear()
+            self.state.is_unregistered.clear()
+            self.events.call_ringing.clear()
+            self.events.call_connected.clear()
+            self.events.media_started.clear()
+            self.events.call_ended.clear()
+
+            if hard:
+                time.sleep(1.0)
+
+            if self.get_tftp_config:
+                get_device_config_via_tftp(
+                    tftp_server=self.state.server,
+                    device_name=self.state.device_name,
+                    port=getattr(self.state, "tftp_port", 69),
+                )
+
+            self.running = True
+            self._threads = []
+            self.connect()
+            self._start_threads()
+            self._send_register()
+            self.logger.info(f"({self.state.device_name}) CM {label} complete — RegisterReq sent")
+        except Exception:
+            self.logger.exception(f"({self.state.device_name}) CM {label} failed")
+            self.running = False
+
+    def _close_skinny_socket(self, *, send_unregister: bool) -> None:
         sock = self.sock
         if sock:
             try:
-                if self.state.is_registered.is_set():
+                if send_unregister and self.state.is_registered.is_set():
                     self._send_unregister()
                     self.state.is_unregistered.wait(timeout=2.0)
             except Exception:
@@ -118,15 +203,6 @@ class SCCPClient:
             except Exception:
                 pass
             self.sock = None
-
-        for t in self._threads:
-            if t.is_alive():
-                t.join(timeout=1.5)
-
-        try:
-            self.audio.close()
-        except Exception:
-            pass
 
     def _send_unregister(self):
         send_unregister_req(self)

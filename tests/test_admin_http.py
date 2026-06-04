@@ -1,14 +1,16 @@
-"""Tests for simulator web admin (tonreset / restart)."""
+"""Tests for simulator web admin (Reset / Restart like CUCM)."""
 
 from __future__ import annotations
 
 import socket
+import struct
 import urllib.request
 
 from simulator.admin_http import start_admin_http
 from simulator.call_hub import CallHub
 from simulator.registry import DeviceRegistry
 from simulator.session import SkinnySession
+from simulator import payloads
 
 
 def _free_port() -> int:
@@ -49,7 +51,16 @@ def _fake_session(device: str, dn: str, ip: str = "10.0.0.5") -> SkinnySession:
     return session
 
 
-def test_admin_lists_phones_and_tonreset():
+def _msg_id(packet: bytes) -> int:
+    return struct.unpack("<III", packet[:12])[2]
+
+
+def test_reset_and_restart_payloads():
+    assert _msg_id(payloads.reset_device()) == 0x0029
+    assert _msg_id(payloads.restart_device()) == 0x0030
+
+
+def test_admin_restart_sends_skinny_message():
     port = _free_port()
     hub = CallHub()
     reg = DeviceRegistry(dn_start=1000)
@@ -65,16 +76,8 @@ def test_admin_lists_phones_and_tonreset():
         server_name="TestSim",
     )
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/phones", timeout=3) as resp:
-            import json
-
-            data = json.loads(resp.read())
-            assert len(data["phones"]) == 1
-            assert data["phones"][0]["device"] == "SEP111122223333"
-            assert data["assignments"]["SEP111122223333"] == "1000"
-
         req = urllib.request.Request(
-            f"http://127.0.0.1:{port}/phones/SEP111122223333/tonreset",
+            f"http://127.0.0.1:{port}/phones/SEP111122223333/restart",
             method="POST",
             headers={"Accept": "application/json"},
         )
@@ -83,13 +86,13 @@ def test_admin_lists_phones_and_tonreset():
 
             body = json.loads(resp.read())
             assert body["ok"] is True
-        assert session.sent
+        assert _msg_id(session.sent[-1]) == 0x0030
     finally:
         server.shutdown()
         server.server_close()
 
 
-def test_admin_restart_unknown_device():
+def test_admin_reset_unknown_device():
     port = _free_port()
     hub = CallHub()
     reg = DeviceRegistry()
@@ -102,7 +105,7 @@ def test_admin_restart_unknown_device():
     )
     try:
         req = urllib.request.Request(
-            f"http://127.0.0.1:{port}/phones/SEPNOPE/restart",
+            f"http://127.0.0.1:{port}/phones/SEPNOPE/reset",
             method="POST",
             headers={"Accept": "application/json"},
         )

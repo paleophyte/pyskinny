@@ -1,4 +1,4 @@
-"""Simple web admin for the Skinny simulator (phone list, tonreset, restart)."""
+"""Simple web admin for the Skinny simulator (Reset / Restart like CUCM)."""
 
 from __future__ import annotations
 
@@ -46,7 +46,6 @@ def _admin_page(ctx: _AdminContext) -> bytes:
         dn = html.escape(phone["dn"] or "—")
         ip = html.escape(phone["ip"])
         state = html.escape(phone["call_state"])
-        in_call = "yes" if phone["in_call"] else "no"
         rows.append(
             f"<tr>"
             f"<td><code>{dev}</code></td>"
@@ -54,10 +53,10 @@ def _admin_page(ctx: _AdminContext) -> bytes:
             f"<td>{ip}</td>"
             f"<td>{state}</td>"
             f"<td>"
-            f'<form method="post" action="/phones/{dev}/tonreset" style="display:inline">'
-            f'<button type="submit">Ton reset</button></form> '
             f'<form method="post" action="/phones/{dev}/restart" style="display:inline">'
             f'<button type="submit">Restart</button></form> '
+            f'<form method="post" action="/phones/{dev}/reset" style="display:inline">'
+            f'<button type="submit">Reset</button></form> '
             f'<form method="post" action="/phones/{dev}/end-call" style="display:inline">'
             f'<button type="submit"{" disabled" if not phone["in_call"] else ""}>End call</button></form>'
             f"</td>"
@@ -80,18 +79,23 @@ def _admin_page(ctx: _AdminContext) -> bytes:
 <title>{html.escape(ctx.server_name)} — phones</title>
 <meta http-equiv="refresh" content="5">
 <style>
-body {{ font-family: system-ui, sans-serif; margin: 1.5rem; }}
-table {{ border-collapse: collapse; margin: 1rem 0; }}
+body {{ font-family: system-ui, sans-serif; margin: 1.5rem; max-width: 960px; }}
+table {{ border-collapse: collapse; margin: 1rem 0; width: 100%; }}
 th, td {{ border: 1px solid #ccc; padding: 0.4rem 0.7rem; text-align: left; }}
 th {{ background: #f4f4f4; }}
-button {{ cursor: pointer; }}
+button {{ cursor: pointer; margin: 0 0.15rem 0.15rem 0; }}
 code {{ font-size: 0.95em; }}
 h2 {{ margin-top: 2rem; }}
+.note {{ color: #444; font-size: 0.95rem; line-height: 1.45; }}
 </style>
 </head>
 <body>
 <h1>{html.escape(ctx.server_name)} — registered phones</h1>
-<p>Auto-refreshes every 5s. <a href="/api/phones">JSON</a></p>
+<p class="note">
+<strong>Restart</strong> (CUCM soft): closes SCCP, re-fetches TFTP config, re-registers — usually seconds.<br>
+<strong>Reset</strong> (CUCM hard): full phone reboot cycle (network + TFTP + register) — slower on hardware.
+Auto-refreshes every 5s. <a href="/api/phones">JSON</a>
+</p>
 <table>
 <thead><tr><th>Device</th><th>DN</th><th>IP</th><th>Call</th><th>Actions</th></tr></thead>
 <tbody>
@@ -159,12 +163,12 @@ class _AdminHandler(BaseHTTPRequestHandler):
         self._send_json(404, {"error": "not found"})
 
     def _run_action(self, ctx: _AdminContext, device: str, action: str) -> tuple[bool, str]:
-        if action == "tonreset":
-            ok = ctx.hub.ton_reset(device)
-            return ok, "tonreset" if ok else "device not registered"
         if action == "restart":
-            ok = ctx.hub.restart_session(device)
+            ok = ctx.hub.restart_device(device)
             return ok, "restart" if ok else "device not registered"
+        if action == "reset":
+            ok = ctx.hub.reset_device(device)
+            return ok, "reset" if ok else "device not registered"
         if action == "end-call":
             ok = ctx.hub.end_call_for_device(device)
             return ok, "end-call" if ok else "no active call"
@@ -217,7 +221,7 @@ def start_admin_http(
     )
     thread.start()
     logger.info(
-        "Simulator admin UI http://%s:%s/ (tonreset, restart, end-call, provision)",
+        "Simulator admin UI http://%s:%s/ (Reset, Restart, end-call, provision)",
         host if host != "0.0.0.0" else "127.0.0.1",
         port,
     )

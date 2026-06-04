@@ -668,35 +668,30 @@ class CallHub:
                 )
             return rows
 
-    def ton_reset(self, device: str) -> bool:
+    def _device_admin_action(self, device: str, *, reset: bool) -> bool:
         session = self.session_for_device(device)
         if not session:
             return False
-        call = session.active_call
-        line = call.line if call else 1
-        ref = call.call_ref if call else 0
-        session.send(payloads.stop_tone(line, ref))
-        if not call:
-            session.send(payloads.display_prompt_status("Ready", line, 0))
+        if session.active_call:
+            self.end_call(source=session)
+        action = "Reset" if reset else "Restart"
+        session.send(payloads.reset_device() if reset else payloads.restart_device())
         logger.info(
-            "Admin tonreset %s (%s)",
+            "Admin %s %s (%s) -> Skinny %s",
+            action,
             session.device_name,
             session.directory_number or "?",
+            "0x0029" if reset else "0x0030",
         )
         return True
 
-    def restart_session(self, device: str) -> bool:
-        session = self.session_for_device(device)
-        if not session:
-            return False
-        logger.info(
-            "Admin restart %s (%s) from %s",
-            session.device_name,
-            session.directory_number or "?",
-            session.addr[0],
-        )
-        session.disconnect()
-        return True
+    def reset_device(self, device: str) -> bool:
+        """Hard reset — like CUCM Reset (re-DHCP/TFTP/re-register on real phones)."""
+        return self._device_admin_action(device, reset=True)
+
+    def restart_device(self, device: str) -> bool:
+        """Soft restart — like CUCM Restart (re-register; faster than reset)."""
+        return self._device_admin_action(device, reset=False)
 
     def end_call_for_device(self, device: str) -> bool:
         session = self.session_for_device(device)

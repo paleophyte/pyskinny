@@ -526,3 +526,17 @@ def unregister_ack(status: int = 0) -> bytes:
     from simulator.protocol import pack_message
 
     return pack_message(0x0118, struct.pack("<I", status))
+
+
+def reset_device() -> bytes:
+    """CallManager → phone hard reset (0x0029)."""
+    from simulator.protocol import pack_message
+
+    return pack_message(0x0029, b"")
+
+
+def restart_device() -> bytes:
+    """CallManager → phone soft restart (0x0030)."""
+    from simulator.protocol import pack_message
+
+    return pack_message(0x0030, b"")

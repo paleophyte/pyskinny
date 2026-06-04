@@ -157,3 +157,15 @@ def parse_register_reject(client, payload):
 
     client.running = False
     client.state.is_unregistered.set()
+
+
+@register_handler(0x0029, "Reset")
+def parse_reset_from_cm(client, payload):
+    logger.info(f"({client.state.device_name}) [RECV] Reset from CallManager")
+    client.reregister_from_cm(hard=True)
+
+
+@register_handler(0x0030, "Restart")
+def parse_restart_from_cm(client, payload):
+    logger.info(f"({client.state.device_name}) [RECV] Restart from CallManager")
+    client.reregister_from_cm(hard=False)
