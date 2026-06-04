@@ -32,7 +32,7 @@ pyskinny includes both a SCCP Client and a grab-bag of practical scripts for pok
 Unit tests (no CallManager required):
 
 ```bash
-pip install -r requirements.txt -r requirements-dev.txt
+pip install -e ".[dev]"
 pytest -m "not integration" -v --no-audio
 ```
 
@@ -72,23 +72,40 @@ Regenerate committed capture fixtures after updating pcaps: `python -m utils.ext
 - Python **3.11+** (tested on 3.12)
 - macOS/Linux (Windows likely fine)
 - System **curl** (for ancient TLS fallbacks)
-- Python deps (example):
-  ```bash
-  pip install -r requirements.txt
-  ```
+- Install: `pip install .` or `pip install -e ".[dev]"` from a clone (see [Quick start](#quick-start))
 - Note: Tested only with CallManager 4.1(3). Will it work on other versions? **Unlikely.**
 
 ---
 
 ## Quick start
 
-Clone your repo and set up a venv:
+Install from a clone (editable, best for development):
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
 ```
+
+Or install runtime only:
+
+```bash
+pip install .
+```
+
+After install, console entry points are on your `PATH`:
+
+| Command | Same as |
+|---------|---------|
+| `pyskinny-console` | `python -m examples.run_console` |
+| `pyskinny-cli` | `python -m examples.run_cli` |
+| `pyskinny-macro` | `python -m examples.run_macro` |
+| `pyskinny-sim` | `python -m examples.run_simulator` |
+| `pyskinny-tftp-relay` | `python -m simulator.tftp_relay` |
+| `pyskinny-phone` | `python -m tools.phone` |
+| `pyskinny-callmanager` | `python -m tools.callmanager` |
+
+`python -m examples.*` and `python -m tools.*` still work after install.
 
 ### examples/run_macro.py
 #### Macro-mode CLI SCCP Client
@@ -543,7 +560,7 @@ See also [docs/lab-cookbook.md](docs/lab-cookbook.md) for the current simulator 
 
 **Next**
 - [x] GitHub Actions CI (unit tests on push)
-- [ ] `pyproject.toml` / `pip install pyskinny`
+- [x] `pyproject.toml` / `pip install pyskinny`
 
 **Later**
 - [ ] Consulted transfer / conference (sim + client)

@@ -1,4 +1,5 @@
 import json, os, tempfile, shutil
+from pathlib import Path
 
 
 DEFAULT_CONFIG = {
@@ -9,10 +10,27 @@ DEFAULT_CONFIG = {
     "auto_answer": False,
 }
 
+
+def _config_parent_writable(path: Path) -> bool:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        probe = path.parent / ".write_probe"
+        probe.write_text("", encoding="utf-8")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
 def config_path_from_here() -> str:
-    """Return the default examples/cli.config path relative to the repo root."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(here, "examples", "cli.config")
+    """Default CLI config path (repo file in dev, user config when installed)."""
+    env = os.environ.get("PYSKINNY_CONFIG")
+    if env:
+        return env
+    dev_cfg = Path(__file__).resolve().parent / "examples" / "cli.config"
+    if dev_cfg.is_file() and _config_parent_writable(dev_cfg):
+        return str(dev_cfg)
+    return str(Path.home() / ".pyskinny" / "cli.config")
 
 
 def resolve_config_path(config_arg) -> str | None:

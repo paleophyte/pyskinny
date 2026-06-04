@@ -1,5 +1,4 @@
 import json
-import os
 from argparse import Namespace
 
 import pytest
@@ -11,7 +10,7 @@ from state import build_state_from_args, PhoneState
 def test_resolve_config_path_true_uses_default_file():
     path = resolve_config_path(True)
     assert path == config_path_from_here()
-    assert os.path.normpath(path).endswith(os.path.join("examples", "cli.config"))
+    assert path.endswith("cli.config")
 
 
 def test_resolve_config_path_explicit():

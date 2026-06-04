@@ -32,8 +32,9 @@ class Node:
         )
 
 def load_cli_spec(path: str) -> List[Node]:
-    with open(path, "r", encoding="utf-8") as f:
-        spec = json.load(f)
+    from utils.paths import read_text_file_or_bundle
+
+    spec = json.loads(read_text_file_or_bundle(path))
     return [Node.from_dict(x) for x in spec]
 
 def _match_token(token: str, choices: List[Node]) -> Tuple[Optional[Node], str]:
