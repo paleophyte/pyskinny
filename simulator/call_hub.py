@@ -271,16 +271,53 @@ class CallHub:
         logger.info("IVR connect ref=%s %s -> %s", call.call_ref, caller_dn, self.ivr_dn)
 
         caller.send_many(
-            self._modern_connect_packets(
+            self._ivr_caller_connect_packets(
                 call,
-                caller,
                 caller_name=caller_name,
                 caller_dn=caller_dn,
-                callee_name=IVR_DEVICE_NAME,
-                callee_dn=self.ivr_dn,
+                legacy=caller._legacy_phone,
             )
         )
         caller.awaiting_media_ack = True
+
+    @staticmethod
+    def _ivr_caller_connect_packets(
+        call: SimCall,
+        *,
+        caller_name: str,
+        caller_dn: str,
+        legacy: bool,
+    ) -> list[bytes]:
+        """Outbound caller connected to virtual IVR — EndCall-only softkeys."""
+        line, ref = call.line, call.call_ref
+        ivr_dn = call.dialed or ""
+        common_tail = [
+            payloads.open_receive_channel(ref),
+            payloads.select_soft_keys(line, ref, softkey_set_index=4),
+        ]
+        if legacy:
+            return [
+                payloads.stop_tone(line, ref),
+                payloads.call_state(payloads.CALL_STATE_CONNECTED, line, ref),
+                payloads.select_soft_keys(line, ref, softkey_set_index=4),
+                payloads.legacy_display_text(ivr_dn, line, ref),
+                payloads.call_info(
+                    caller_name, caller_dn, IVR_DEVICE_NAME, ivr_dn,
+                    line=line, call_ref=ref, call_type=2,
+                ),
+                *common_tail,
+            ]
+        return [
+            payloads.stop_tone(line, ref),
+            payloads.call_state(payloads.CALL_STATE_CONNECTED, line, ref),
+            payloads.call_info(
+                caller_name, caller_dn, IVR_DEVICE_NAME, ivr_dn,
+                line=line, call_ref=ref, call_type=2,
+            ),
+            payloads.display_prompt_status("Connected", line, ref),
+            payloads.select_soft_keys(line, ref, softkey_set_index=4),
+            *common_tail,
+        ]
 
     @staticmethod
     def _legacy_ring_in_tail(call: SimCall) -> list[bytes]:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import struct
 import socket
+import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -57,11 +58,17 @@ class SimMediaHub:
         advertise_ip: str = "127.0.0.1",
         tone_hz: float = 1000.0,
         compression_type: int = DEFAULT_SKINNY_COMPRESSION,
+        loopback_delay_ms: float = 1500.0,
+        loopback_gain_db: float = 12.0,
+        loopback_preamble_sec: float = 2.0,
     ):
         self.mode = mode if mode in self.VALID_MODES else "off"
         self.advertise_ip = advertise_ip
         self.tone_hz = tone_hz
         self.compression_type = compression_type
+        self.loopback_delay_ms = loopback_delay_ms
+        self.loopback_gain_db = loopback_gain_db
+        self.loopback_preamble_sec = loopback_preamble_sec
         self._sessions: dict[int, SimMediaSession] = {}
 
     def set_advertise_ip(self, ip: str) -> None:
@@ -123,7 +130,22 @@ class SimMediaHub:
             if self.mode == "tone":
                 tx.send_tone(self.tone_hz)
             elif self.mode == "loopback":
-                leg.echo = wire_rtp_loopback(rx, tx, sr=8000)
+                leg.echo = wire_rtp_loopback(
+                    rx,
+                    tx,
+                    sr=8000,
+                    delay_ms=self.loopback_delay_ms,
+                    gain_db=self.loopback_gain_db,
+                    start_tx=self.loopback_preamble_sec <= 0,
+                )
+                if self.loopback_preamble_sec > 0:
+                    tx.send_tone(self.tone_hz)
+                    echo = leg.echo
+                    threading.Timer(
+                        self.loopback_preamble_sec,
+                        lambda: tx.send_echo(echo),
+                        name=f"sim-loopback-{call.call_ref}",
+                    ).start()
             # bridge wiring happens after all legs exist
 
         if self.mode == "bridge" and len(sim_session.legs) == 2:

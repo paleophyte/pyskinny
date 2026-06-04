@@ -83,6 +83,27 @@ def main() -> None:
         help="Tone frequency when --rtp-sim-peer tone (default: 1000)",
     )
     parser.add_argument(
+        "--rtp-sim-loopback-delay",
+        type=float,
+        default=1500.0,
+        metavar="MS",
+        help="Loopback echo delay in ms (default: 1500)",
+    )
+    parser.add_argument(
+        "--rtp-sim-loopback-gain",
+        type=float,
+        default=12.0,
+        metavar="DB",
+        help="Loopback echo gain in dB (default: 12)",
+    )
+    parser.add_argument(
+        "--rtp-sim-loopback-preamble",
+        type=float,
+        default=2.0,
+        metavar="SEC",
+        help="Play test tone this long before loopback starts (default: 2, 0=off)",
+    )
+    parser.add_argument(
         "--ivr-dn",
         default=None,
         metavar="DN",
@@ -109,6 +130,9 @@ def main() -> None:
         auto_answer=auto_answer or None,
         rtp_sim_peer=args.rtp_sim_peer,
         rtp_sim_tone_hz=args.rtp_sim_tone_hz,
+        rtp_sim_loopback_delay_ms=args.rtp_sim_loopback_delay,
+        rtp_sim_loopback_gain_db=args.rtp_sim_loopback_gain,
+        rtp_sim_loopback_preamble_sec=args.rtp_sim_loopback_preamble,
         ivr_dn=args.ivr_dn,
     )
 

@@ -33,6 +33,9 @@ class SkinnySimulator:
         cip_port: int = 8088,
         rtp_sim_peer: str = "off",
         rtp_sim_tone_hz: float = 1000.0,
+        rtp_sim_loopback_delay_ms: float = 1500.0,
+        rtp_sim_loopback_gain_db: float = 12.0,
+        rtp_sim_loopback_preamble_sec: float = 2.0,
         ivr_dn: str | None = None,
     ):
         self.host = host
@@ -42,7 +45,12 @@ class SkinnySimulator:
         self.ivr_dn = str(ivr_dn) if ivr_dn else None
         if self.ivr_dn:
             self.registry.reserve_dn(self.ivr_dn)
-        media_hub = SimMediaHub(mode=rtp_sim_peer) if rtp_sim_peer != "off" else None
+        media_hub = SimMediaHub(
+            mode=rtp_sim_peer,
+            loopback_delay_ms=rtp_sim_loopback_delay_ms,
+            loopback_gain_db=rtp_sim_loopback_gain_db,
+            loopback_preamble_sec=rtp_sim_loopback_preamble_sec,
+        ) if rtp_sim_peer != "off" else None
         if self.ivr_dn and media_hub is None:
             media_hub = SimMediaHub(mode="tone")
         self.hub = CallHub(media_hub=media_hub, ivr_dn=self.ivr_dn)

@@ -64,6 +64,8 @@ def test_dial_ivr_auto_connects():
         call = client.state.active_calls_list[-1]
         assert str(call) in client.state.calls
         assert client.state.calls[str(call)]["call_state"] == 5
+        labels = [label for label, _ in client.state.get_current_softkeys()]
+        assert "EndCall" in labels
     finally:
         client.stop()
         sim.stop()

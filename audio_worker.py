@@ -705,9 +705,12 @@ class EchoSource(_BaseSource):
 
     MAX_QUEUE_MS = 400
 
-    def __init__(self, sr: int):
+    def __init__(self, sr: int, *, delay_ms: float = 0, gain_db: float = 0.0):
         self.sr = sr
+        self.gain = 10 ** (gain_db / 20.0)
+        self._delay_samples = max(0, int(sr * delay_ms / 1000))
         self._buf: deque = deque()
+        self._queued = 0
         self._lock = threading.Lock()
 
     def push(self, pcm: np.ndarray) -> None:
@@ -716,24 +719,31 @@ class EchoSource(_BaseSource):
         chunk = pcm.astype(np.float32, copy=False)
         with self._lock:
             self._buf.append(chunk)
-            total = sum(arr.size for arr in self._buf)
-            max_samples = int(self.sr * self.MAX_QUEUE_MS / 1000)
-            while total > max_samples and self._buf:
+            self._queued += chunk.size
+            max_samples = int(self.sr * self.MAX_QUEUE_MS / 1000) + self._delay_samples
+            while self._queued > max_samples and self._buf:
                 dropped = self._buf.popleft()
-                total -= dropped.size
+                self._queued -= dropped.size
 
     def read(self, n: int) -> np.ndarray:
         out = np.zeros(n, dtype=np.float32)
         with self._lock:
+            if self._delay_samples > 0:
+                releasable = self._queued - self._delay_samples
+                if releasable <= 0:
+                    return out
+                n = min(n, releasable)
+
             i = 0
             while i < n and self._buf:
                 chunk = self._buf[0]
                 take = min(n - i, chunk.size)
-                out[i : i + take] = chunk[:take]
+                out[i : i + take] = chunk[:take] * self.gain
                 if take == chunk.size:
                     self._buf.popleft()
                 else:
                     self._buf[0] = chunk[take:]
+                self._queued -= take
                 i += take
         return out
 
@@ -1007,9 +1017,18 @@ class RTPSender:
                 next_send = time.perf_counter()
 
 
-def wire_rtp_loopback(rx: RTPReceiver, tx: RTPSender, *, sr: int = 8000) -> EchoSource:
+def wire_rtp_loopback(
+    rx: RTPReceiver,
+    tx: RTPSender,
+    *,
+    sr: int = 8000,
+    delay_ms: float = 0,
+    gain_db: float = 0.0,
+    start_tx: bool = True,
+) -> EchoSource:
     """Connect an RTP receiver to an RTP sender for echo-back troubleshooting."""
-    echo = EchoSource(sr)
+    echo = EchoSource(sr, delay_ms=delay_ms, gain_db=gain_db)
     rx.attach_echo(echo)
-    tx.send_echo(echo)
+    if start_tx:
+        tx.send_echo(echo)
     return echo
