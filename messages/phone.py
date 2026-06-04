@@ -1,5 +1,4 @@
 import struct
-import datetime
 import time
 from dispatcher import register_handler
 from messages.generic import STIMULUS_NAMES, TONE_NAMES, TONE_OUTPUT_DIRECTION_NAMES, CALL_TYPE_NAMES, CALL_STAT_STATE_NAMES, clean_bytes, send_skinny_message, Buf
