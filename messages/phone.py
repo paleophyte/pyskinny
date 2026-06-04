@@ -386,13 +386,16 @@ def parse_call_state(client, payload):
     call["precedence_domain"] = precedence_domain
 
     if call_state in [0, 2]:          # Idle / OnHook
-        _teardown_local_media(client)
         mark_call_ended(client, call_reference, source="CallState")
+        if not client.state.active_calls_list:
+            _teardown_local_media(client)
 
     elif call_state in [3, 4]:        # RingOut / RingIn
         if key not in client.state.active_calls_list:
             client.state.active_calls_list.append(key)
 
+        client.state.selected_call_reference = key
+        client.state.active_call_line_instance = line_instance
         client.state.call_active = True
         client.state.active_call = True
         client._call_epoch += 1
@@ -407,16 +410,18 @@ def parse_call_state(client, payload):
             line_instance=line_instance,
             source="CallState",
         )
+        client.state.selected_call_reference = key
 
     elif call_state == 8:             # Hold
-        if key not in client.state.active_calls_list:
-            client.state.active_calls_list.append(key)
-        client.state.call_active = True
-        client.state.active_call = True
-        client.state.call_connected = False
-        client.state.media_active = False
-        client.events.call_connected.clear()
-        client.events.media_started.clear()
+        from utils.call_management import mark_call_held
+
+        mark_call_held(
+            client,
+            call_reference=call_reference,
+            line_instance=line_instance,
+            source="CallState",
+        )
+        client.state.selected_call_reference = key
 
     logger.info(
         f"[RECV] CallState "
@@ -436,13 +441,14 @@ def parse_activate_callplane(client, payload):
     logger.info(f"[RECV] ActivateCallPlane")
 
 
-def end_local_call(client, source: str = "local") -> None:
+def end_local_call(client, source: str = "local", *, call_ref: int | None = None) -> None:
     """Stop local RTP/tone immediately; update call state without waiting for CM."""
     _teardown_local_media(client)
     if client.state.enable_audio:
         client.audio.clear_tone(1)
-    _, ref = client.resolve_call_target()
-    mark_call_ended(client, ref if ref else None, source=source)
+    if call_ref is None:
+        _, call_ref = client.resolve_call_target(softkey_name="EndCall")
+    mark_call_ended(client, call_ref if call_ref else None, source=source)
 
 
 @register_handler(0x0082, "StartTone")
@@ -564,7 +570,7 @@ def parse_call_info(client, payload):
         active_refs = list(client.state.active_calls_list or [])
 
         if active_refs:
-            call_reference = active_refs[0]
+            call_reference = active_refs[-1]
         else:
             call_reference = next_synthetic_call_reference(client)
 

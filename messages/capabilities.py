@@ -273,6 +273,8 @@ def parse_select_softkeys(client, payload):
     # client.state.selected_softkeys[str(lineInstance)] = {"call_reference": callReference, "softkeyset_index": softKeySetIndex, "softkeyset_index_name": softKeySetIndexName, "validkey_mask": validKeyMask, "validkey_mask_str": f"{validKeyMask:016b}"}
     client.state.selected_softkeys[str(callReference)] = {"line_instance": lineInstance, "call_reference": callReference, "softkeyset_index": softKeySetIndex, "softkeyset_index_name": softKeySetIndexName, "validkey_mask": validKeyMask, "validkey_mask_str": f"{validKeyMask:016b}"}
     client.state.selected_softkey_set = softKeySetIndex
+    if callReference:
+        client.state.selected_call_reference = str(callReference)
 
     # logger.info(f"({client.state.device_name}) [RECV] SelectSoftKeys lineInstance: {lineInstance}, callReference: {callReference}, softKeySetIndex: {softKeySetIndexName} ({softKeySetIndex}), validKeyMask: {validKeyMask:016b}")
     logger.info(f"({client.state.device_name}) [RECV] SelectSoftKeys")

@@ -308,9 +308,50 @@ class SCCPClient:
             return n if n > 0 else None
         return None
 
-    def resolve_call_target(self, line=1, call_ref=0) -> tuple[int, int]:
+    def _call_ref_for_state(self, state: int) -> tuple[int, int] | None:
+        """Return (line, ref) for a call in the given Skinny call state."""
+        candidates: list[str] = []
+        selected = getattr(self.state, "selected_call_reference", None)
+        if selected:
+            candidates.append(str(selected))
+        for key in reversed(self.state.active_calls_list or []):
+            sk = str(key)
+            if sk not in candidates:
+                candidates.append(sk)
+
+        seen: set[str] = set()
+        for key in candidates:
+            if key in seen:
+                continue
+            seen.add(key)
+            call = self.state.calls.get(key, {})
+            if call.get("call_state") != state:
+                continue
+            line = int(call.get("line_instance") or 1)
+            ref = self.numeric_call_ref(key)
+            if ref is None:
+                ref = self.numeric_call_ref(call.get("call_reference"))
+            if ref is not None:
+                return line, ref
+        return None
+
+    def resolve_call_target(
+        self, line=1, call_ref=0, *, softkey_name: str | None = None
+    ) -> tuple[int, int]:
         """Resolve line + call reference for softkey/stimulus messages."""
         active_line = line or 1
+
+        if softkey_name == "NewCall":
+            return active_line, 0
+        if softkey_name == "Resume":
+            found = self._call_ref_for_state(8)
+            if found:
+                return found
+        if softkey_name in ("Hold", "EndCall", "Transfer"):
+            found = self._call_ref_for_state(5)
+            if found:
+                return found
+
         numeric_ref = self.numeric_call_ref(call_ref)
 
         if numeric_ref is None and call_ref:
@@ -343,12 +384,14 @@ class SCCPClient:
 
     def press_softkey(self, softkey_name, line=1, call_ref=0):
         key_defs = self.state.softkey_template or {}
-        active_line, active_call_ref = self.resolve_call_target(line, call_ref)
+        active_line, active_call_ref = self.resolve_call_target(
+            line, call_ref, softkey_name=softkey_name
+        )
         for v in key_defs.values():
             if v.get("label") == softkey_name:
                 if softkey_name == "EndCall":
                     from messages.phone import end_local_call
-                    end_local_call(self, source="local-endcall")
+                    end_local_call(self, source="local-endcall", call_ref=active_call_ref)
                 handle_softkey_press(self, active_line, v["event"], active_call_ref)
                 return
         self.logger.warning(f"({self.state.device_name}) No such softkey {softkey_name}")

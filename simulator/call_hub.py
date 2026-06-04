@@ -63,6 +63,7 @@ class SimCall:
     transfer_active: bool = False
     transfer_initiator: SkinnySession | None = None
     transfer_digits: str = ""
+    held_by: SkinnySession | None = None
 
 
 class CallHub:
@@ -126,8 +127,11 @@ class CallHub:
         call_ref_hint: int | None = None,
     ) -> SimCall:
         with self._lock:
+            held_call: SimCall | None = None
             if caller.active_call is not None:
-                raise RuntimeError(f"{caller.device_name} already in a call")
+                if caller.active_call.state != "held":
+                    raise RuntimeError(f"{caller.device_name} already in a call")
+                held_call = caller.active_call
             if call_ref_hint is not None and call_ref_hint > 0:
                 call_ref = call_ref_hint
             else:
@@ -135,6 +139,8 @@ class CallHub:
             call = SimCall(call_ref=call_ref, caller=caller, state="dialing", line=max(1, line))
             self._calls[call_ref] = call
             caller.active_call = call
+            if held_call and self.media_hub:
+                self.media_hub.stop_call(held_call.call_ref)
             return call
 
     def on_digit(self, caller: SkinnySession, digit: str) -> None:
@@ -497,6 +503,7 @@ class CallHub:
         if not call or call.state != "connected" or call.callee is None:
             return
         call.state = "held"
+        call.held_by = session
         logger.info("Hold call ref=%s by %s", call.call_ref, session.device_name)
         self._notify_hold(call, holder=session)
 
@@ -505,6 +512,7 @@ class CallHub:
         if not call or call.state != "held" or call.callee is None:
             return
         call.state = "connected"
+        call.held_by = None
         call.media_ports.clear()
         logger.info("Resume call ref=%s by %s", call.call_ref, session.device_name)
         self._notify_resumed(call)
@@ -761,6 +769,145 @@ class CallHub:
             callee_port,
         )
 
+    def _other_calls_for_party(
+        self, party: SkinnySession, *, exclude_ref: int | None = None
+    ) -> list[SimCall]:
+        calls: list[SimCall] = []
+        for ref, call in self._calls.items():
+            if exclude_ref is not None and ref == exclude_ref:
+                continue
+            if party not in (call.caller, call.callee):
+                continue
+            if call.state in ("held", "connected", "ringing", "dialing"):
+                calls.append(call)
+        return calls
+
+    def _pick_focus_call(self, calls: list[SimCall]) -> SimCall | None:
+        if not calls:
+            return None
+        order = {"held": 0, "connected": 1, "ringing": 2, "dialing": 3}
+        return sorted(calls, key=lambda c: (order.get(c.state, 9), -c.call_ref))[0]
+
+    def _send_party_idle(self, party: SkinnySession, line: int, ended_ref: int) -> None:
+        party.awaiting_media_ack = False
+        if party._legacy_phone:
+            party.send_many([
+                payloads.stop_tone(line, ended_ref),
+                payloads.set_lamp(stimulus=9, instance=line, lamp_mode=1),
+                payloads.clear_prompt_status(line, ended_ref),
+                payloads.call_state(payloads.CALL_STATE_ONHOOK, line, ended_ref),
+                payloads.legacy_select_softkeys_onhook(),
+                payloads.time_date_res(),
+                payloads.set_speaker_mode(0),
+            ])
+        else:
+            party.send_many([
+                payloads.stop_tone(line, ended_ref),
+                payloads.call_state(payloads.CALL_STATE_ONHOOK, line, ended_ref),
+                payloads.display_prompt_status("Ready", line, 0),
+                payloads.select_soft_keys(line, 0, softkey_set_index=0),
+            ])
+
+    def _send_party_focus(self, party: SkinnySession, call: SimCall) -> None:
+        caller = call.caller
+        callee = call.callee
+        caller_name = caller.device_name
+        callee_name = callee.device_name if callee else ""
+        caller_dn = caller.directory_number
+        callee_dn = callee.directory_number if callee else ""
+        line, ref = call.line, call.call_ref
+
+        if call.state == "held":
+            holder = call.held_by or caller
+            if party is holder:
+                party.send_many([
+                    payloads.stop_tone(line, ref),
+                    payloads.call_state(payloads.CALL_STATE_HOLD, line, ref),
+                    payloads.call_info(
+                        caller_name, caller_dn, callee_name, callee_dn,
+                        line=line, call_ref=ref,
+                        call_type=2 if holder is caller else 1,
+                    ),
+                    payloads.start_tone(payloads.TONE_HOLD, line, ref),
+                    payloads.display_prompt_status("On Hold", line, ref),
+                    payloads.select_soft_keys(line, ref, softkey_set_index=2),
+                ])
+            else:
+                party.send_many([
+                    payloads.stop_tone(line, ref),
+                    payloads.call_state(payloads.CALL_STATE_HOLD, line, ref),
+                    payloads.call_info(
+                        caller_name, caller_dn, callee_name, callee_dn,
+                        line=line, call_ref=ref,
+                        call_type=2 if party is caller else 1,
+                    ),
+                    payloads.start_tone(payloads.TONE_REMOTE_HOLD, line, ref),
+                    payloads.display_prompt_status("Remote Hold", line, ref),
+                    payloads.select_soft_keys(line, ref, softkey_set_index=2),
+                ])
+            return
+
+        if call.state == "connected" and callee is not None:
+            if party._legacy_phone and party is callee:
+                party.send_many(
+                    self._legacy_callee_connect_packets(
+                        call,
+                        caller_name=caller_name,
+                        caller_dn=caller_dn,
+                        callee_name=callee_name,
+                        callee_dn=callee_dn,
+                    )
+                )
+            else:
+                party.send_many(
+                    self._modern_connect_packets(
+                        call,
+                        party,
+                        caller_name=caller_name,
+                        caller_dn=caller_dn,
+                        callee_name=callee_name,
+                        callee_dn=callee_dn,
+                    )
+                )
+            party.awaiting_media_ack = True
+            return
+
+        if call.state == "ringing" and callee is not None:
+            if party is callee:
+                if callee._legacy_phone:
+                    party.send_many([
+                        payloads.call_state(payloads.CALL_STATE_RINGIN, line, ref),
+                        payloads.select_soft_keys(line, ref, softkey_set_index=3),
+                        payloads.legacy_display_text(caller_dn, line, ref),
+                        payloads.display_pri_notify(caller_dn),
+                        payloads.call_info(
+                            caller_name, caller_dn, callee_name, callee_dn,
+                            line=line, call_ref=ref, call_type=1,
+                        ),
+                    ] + self._legacy_ring_in_tail(call))
+                else:
+                    party.send_many([
+                        payloads.call_state(payloads.CALL_STATE_RINGIN, line, ref),
+                        payloads.call_info(
+                            caller_name, caller_dn, callee_name, callee_dn,
+                            line=line, call_ref=ref, call_type=1,
+                        ),
+                        payloads.start_tone(payloads.TONE_RING, line, ref),
+                        payloads.display_prompt_status("Ring In", line, ref),
+                        payloads.select_soft_keys(line, ref, softkey_set_index=3),
+                    ])
+            elif party is caller:
+                party.send_many([
+                    payloads.stop_tone(line, ref),
+                    payloads.call_state(payloads.CALL_STATE_RINGOUT, line, ref),
+                    payloads.call_info(
+                        caller_name, caller_dn, callee_name, callee_dn,
+                        line=line, call_ref=ref, call_type=2,
+                    ),
+                    payloads.display_prompt_status("Ring Out", line, ref),
+                    payloads.select_soft_keys(line, ref, softkey_set_index=8),
+                ])
+
     def end_call(self, call_ref: int | None = None, *, source: SkinnySession | None = None) -> None:
         with self._lock:
             if call_ref is None and source and source.active_call:
@@ -779,29 +926,46 @@ class CallHub:
             if self.media_hub:
                 self.media_hub.stop_call(call.call_ref)
 
+            seen: set[int] = set()
             for party in parties:
+                pid = id(party)
+                if pid in seen:
+                    continue
+                seen.add(pid)
+
                 if call.media_ports:
                     party.send(payloads.stop_media_transmission(call.call_ref))
                     party.send(payloads.close_receive_channel(call.call_ref))
-                party.active_call = None
-                party.awaiting_media_ack = False
-                if party._legacy_phone:
-                    party.send_many([
-                        payloads.stop_tone(call.line, call.call_ref),
-                        payloads.set_lamp(stimulus=9, instance=call.line, lamp_mode=1),
-                        payloads.clear_prompt_status(call.line, call.call_ref),
-                        payloads.call_state(payloads.CALL_STATE_ONHOOK, call.line, call.call_ref),
-                        payloads.legacy_select_softkeys_onhook(),
-                        payloads.time_date_res(),
-                        payloads.set_speaker_mode(0),
-                    ])
+                if party.active_call and party.active_call.call_ref == call_ref:
+                    party.active_call = None
+
+                party.send(payloads.stop_tone(call.line, call.call_ref))
+                party.send(
+                    payloads.call_state(
+                        payloads.CALL_STATE_ONHOOK, call.line, call.call_ref
+                    )
+                )
+
+                remaining = self._other_calls_for_party(party)
+                focus = self._pick_focus_call(remaining)
+                if focus is None:
+                    party.awaiting_media_ack = False
+                    if party._legacy_phone:
+                        party.send_many([
+                            payloads.set_lamp(stimulus=9, instance=call.line, lamp_mode=1),
+                            payloads.clear_prompt_status(call.line, call.call_ref),
+                            payloads.legacy_select_softkeys_onhook(),
+                            payloads.time_date_res(),
+                            payloads.set_speaker_mode(0),
+                        ])
+                    else:
+                        party.send_many([
+                            payloads.display_prompt_status("Ready", call.line, 0),
+                            payloads.select_soft_keys(call.line, 0, softkey_set_index=0),
+                        ])
                 else:
-                    party.send_many([
-                        payloads.stop_tone(call.line, call.call_ref),
-                        payloads.call_state(payloads.CALL_STATE_ONHOOK, call.line, call.call_ref),
-                        payloads.display_prompt_status("Ready", call.line, 0),
-                        payloads.select_soft_keys(call.line, 0, softkey_set_index=0),
-                    ])
+                    party.active_call = focus
+                    self._send_party_focus(party, focus)
 
             logger.info("Call ended ref=%s", call.call_ref)
             if call.ivr and self.ivr_menu:

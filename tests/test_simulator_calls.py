@@ -117,11 +117,65 @@ def test_two_phones_hold_and_resume(sim_server):
         assert client_b.state.calls[ref]["call_state"] == 5
         assert client_a.events.call_connected.wait(timeout=10)
         assert client_b.events.call_connected.wait(timeout=10)
+
+        client_a.press_softkey("EndCall")
+        time.sleep(0.5)
     finally:
         client_a.stop()
         client_b.stop()
-        assert state_a.is_unregistered.wait(timeout=10)
-        assert state_b.is_unregistered.wait(timeout=10)
+        state_a.is_unregistered.wait(timeout=10)
+        state_b.is_unregistered.wait(timeout=10)
+
+
+def test_second_call_while_on_hold(sim_server):
+    sim, host, port = sim_server
+
+    client_a, state_a = _register_client(host, port, "AABBCCDDEE0A")
+    client_b, state_b = _register_client(host, port, "AABBCCDDEE0B")
+    client_c, state_c = _register_client(host, port, "AABBCCDDEE0C")
+    dn_b = sim.registry.get(state_b.device_name)
+    dn_c = sim.registry.get(state_c.device_name)
+
+    try:
+        _dial(client_a, dn_b)
+        assert client_b.events.call_ringing.wait(timeout=10)
+        client_b.press_softkey("Answer")
+        assert client_a.events.call_connected.wait(timeout=10)
+
+        ref_ab = str(client_a.state.active_calls_list[-1])
+        client_a.press_softkey("Hold")
+        time.sleep(0.75)
+        assert client_a.state.calls[ref_ab]["call_state"] == 8
+
+        _dial(client_a, dn_c)
+        assert client_c.events.call_ringing.wait(timeout=10)
+        client_c.press_softkey("Answer")
+        assert client_a.events.call_connected.wait(timeout=10)
+
+        ref_ac = str(client_a.state.active_calls_list[-1])
+        assert ref_ac != ref_ab
+        assert client_a.state.calls[ref_ac]["call_state"] == 5
+
+        client_a.press_softkey("EndCall")
+        time.sleep(0.75)
+        assert ref_ac not in client_a.state.active_calls_list or client_a.state.calls[ref_ac]["call_state"] in (0, 2)
+        assert client_a.state.calls[ref_ab]["call_state"] == 8
+
+        client_a.press_softkey("Resume")
+        time.sleep(0.75)
+        assert client_a.state.calls[ref_ab]["call_state"] == 5
+        assert client_b.state.calls[ref_ab]["call_state"] == 5
+        assert client_a.events.call_connected.wait(timeout=10)
+
+        client_a.press_softkey("EndCall")
+        time.sleep(0.5)
+    finally:
+        client_a.stop()
+        client_b.stop()
+        client_c.stop()
+        state_a.is_unregistered.wait(timeout=10)
+        state_b.is_unregistered.wait(timeout=10)
+        state_c.is_unregistered.wait(timeout=10)
 
 
 def test_connected_keypad_relays_to_callee(sim_server):

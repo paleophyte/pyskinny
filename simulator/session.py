@@ -298,7 +298,7 @@ class SkinnySession:
         return True
 
     def _start_outbound(self, *, line: int = 1, call_ref_hint: int | None = None) -> None:
-        if self.active_call is not None:
+        if self.active_call is not None and self.active_call.state != "held":
             return
         try:
             call = self.hub.begin_outbound(

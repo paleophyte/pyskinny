@@ -43,6 +43,28 @@ def test_resolve_call_target_uses_active_call_ref_not_line_key():
     assert ref == 16777221
 
 
+def test_resolve_call_target_prefers_connected_for_hold_end():
+    client = _make_client(call_ref=16777221)
+    held_ref = 16777220
+    client.state.active_calls_list = [str(held_ref), "16777221"]
+    client.state.calls[str(held_ref)] = {
+        "call_reference": held_ref,
+        "line_instance": 1,
+        "call_state": 8,
+    }
+    client.state.calls["16777221"] = {
+        "call_reference": 16777221,
+        "line_instance": 1,
+        "call_state": 5,
+    }
+    line, ref = client.resolve_call_target(softkey_name="Hold")
+    assert ref == 16777221
+    line, ref = client.resolve_call_target(softkey_name="Resume")
+    assert ref == held_ref
+    line, ref = client.resolve_call_target(softkey_name="NewCall")
+    assert ref == 0
+
+
 @patch("client.handle_softkey_press")
 def test_press_softkey_uses_resolved_call_reference(mock_softkey):
     client = _make_client(call_ref=99988877)

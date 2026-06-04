@@ -135,10 +135,48 @@ def mark_call_connected(client, call_reference, line_instance=0, source="inferre
     client.state.call_active = True
     client.state.active_call = True
     client.state.call_connected = True
+    client.state.selected_call_reference = key
     client.events.call_connected.set()
     client.events.call_ended.clear()
 
     return key
+
+
+def mark_call_held(client, call_reference, line_instance=0, source="CallState"):
+    key = update_call_state(
+        client,
+        call_reference=call_reference,
+        line_instance=line_instance,
+        call_state=8,
+        call_state_name="Hold",
+        source=source,
+    )
+
+    if key not in client.state.active_calls_list:
+        client.state.active_calls_list.append(key)
+
+    client.state.call_active = True
+    client.state.active_call = True
+    client.state.call_connected = any(
+        client.state.calls.get(str(r), {}).get("call_state") == 5
+        for r in client.state.active_calls_list
+    )
+    client.state.media_active = False
+    client.events.call_connected.clear()
+    client.events.media_started.clear()
+    return key
+
+
+def sync_call_flags(client) -> None:
+    """Refresh aggregate call flags from per-call state."""
+    active = list(client.state.active_calls_list or [])
+    client.state.call_active = bool(active)
+    client.state.active_call = bool(active)
+    client.state.call_connected = any(
+        client.state.calls.get(str(r), {}).get("call_state") == 5 for r in active
+    )
+    if not client.state.call_connected:
+        client.state.media_active = False
 
 
 def mark_call_ended(client, call_reference=None, source="inferred"):
@@ -166,16 +204,17 @@ def mark_call_ended(client, call_reference=None, source="inferred"):
         if key in client.state.active_calls_list:
             client.state.active_calls_list.remove(key)
 
-    if not client.state.active_calls_list:
-        client.state.active_call = False
-        client.state.call_active = False
-        client.state.call_connected = False
-        client.state.media_active = False
+    sync_call_flags(client)
 
-    client.events.call_ringing.clear()
-    client.events.call_connected.clear()
-    client.events.media_started.clear()
-    client.events.call_ended.set()
+    if not client.state.active_calls_list:
+        client.events.call_ringing.clear()
+        client.events.call_connected.clear()
+        client.events.media_started.clear()
+        client.events.call_ended.set()
+    else:
+        client.events.call_ended.clear()
+        if client.state.call_connected:
+            client.events.call_connected.set()
 
     logger.debug(
         f"mark_call_ended "
