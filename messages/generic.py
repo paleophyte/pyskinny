@@ -116,10 +116,19 @@ KEY_SET_INDEX_NAMES = {
 
 
 DEVICE_TYPE_MAP = {
+    # CM 2.x / early typemodel IDs (same enum table as later CUCM for legacy SCCP phones)
+    1: "Cisco 30 SP+",
+    2: "Cisco 12 SP+",
+    3: "Cisco 12 SP",
+    4: "Cisco 12 S",
+    5: "Cisco 30 VIP",
     6: "Cisco 7910",
     7: "Cisco 7960",
     8: "Cisco 7940",
     9: "Cisco 7935",
+    10: "Cisco VGC Phone",
+    11: "Cisco VGC Virtual Phone",
+    12: "Cisco ATA 186",
     14: "Virtual30SPplus",
     115: "Cisco 7941",
     119: "Cisco 7971",
@@ -307,6 +316,10 @@ for enum, name in DEVICE_TYPE_MAP.items():
     if name.lower().startswith("cisco "):
         short_model = name.lower().split("cisco ")[1]
         DEVICE_NAME_TO_ENUM[short_model] = enum  # e.g., "7970" → 30006
+
+# CM2-era shorthands without spaces (RegisterReq device_type must match CM device record)
+DEVICE_NAME_TO_ENUM.setdefault("30vip", 5)
+DEVICE_NAME_TO_ENUM.setdefault("30sp+", 1)
 
 
 def get_device_enum(model_name: str) -> int | None:
