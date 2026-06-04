@@ -5,13 +5,13 @@ from __future__ import annotations
 import logging
 import threading
 import time
-import wave
 from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from simulator import payloads
 from utils.macro_script import parse_macro_script, parse_switch_cases
+from utils.macro_runtime import play_prompt_with_barge_in
 
 if TYPE_CHECKING:
     from simulator.call_hub import CallHub, SimCall
@@ -44,12 +44,6 @@ GOTO MENU
 HANGUP:
 END
 """
-
-
-def wav_duration_sec(path: Path) -> float:
-    with wave.open(str(path), "rb") as wf:
-        rate = wf.getframerate() or 8000
-        return wf.getnframes() / float(rate)
 
 
 class SimIvrMacroRunner:
@@ -115,19 +109,16 @@ class SimIvrMacroRunner:
         if path is None:
             logger.warning("IVR PLAY missing file %r ref=%s", raw, self.call.call_ref)
             return
-        self.media.play_wav(self.call.call_ref, str(path))
-        delay = wav_duration_sec(path)
-        logger.info("IVR PLAY ref=%s %s (%.1fs)", self.call.call_ref, path.name, delay)
-        end = time.time() + delay
-        while time.time() < end and not self._stop.is_set():
-            if self._digit_queue:
-                logger.debug(
-                    "IVR PLAY interrupted ref=%s after %.2fs (barge-in)",
-                    self.call.call_ref,
-                    delay - (end - time.time()),
-                )
-                break
-            time.sleep(min(0.05, max(0.0, end - time.time())))
+        ref = self.call.call_ref
+        play_prompt_with_barge_in(
+            path=path,
+            start=lambda p: self.media.play_wav(ref, p),
+            stop=lambda: self.media.stop_playback(ref),
+            poll_digit=lambda: self._digit_queue[0] if self._digit_queue else None,
+            should_abort=lambda: self._stop.is_set(),
+            log=logger,
+            log_ctx=f"ref={ref}",
+        )
 
     def _wait_digit(self, secs: float) -> str | None:
         if self._digit_queue:

@@ -7,6 +7,7 @@ from messages.generic import handle_keypad_press
 import threading
 import logging
 from utils.macro_script import MacroInstruction, parse_macro_script, parse_switch_cases
+from utils.macro_runtime import peek_dtmf_digit, play_prompt_with_barge_in
 
 logger = logging.getLogger(__name__)
 
@@ -302,8 +303,22 @@ def run_macro(client: SCCPClient, instructions, labels, stop_event: threading.Ev
         elif cmd == "END":
             client.press_softkey("EndCall")
         elif cmd == "PLAY":
-            filename = args[0]
-            client.state._rtp_tx.send_wav(filename, loop=False)
+            filename = " ".join(args)
+            tx = getattr(client.state, "_rtp_tx", None)
+            if tx is None:
+                logger.warning("PLAY: RTP TX not active (%s)", filename)
+            else:
+                play_prompt_with_barge_in(
+                    path=filename,
+                    start=lambda p: tx.send_wav(p, loop=False),
+                    stop=lambda: tx.send_silence(),
+                    poll_digit=lambda: peek_dtmf_digit(client),
+                    should_abort=lambda: (
+                        stop_event.is_set() or client.events.call_ended.is_set()
+                    ),
+                    log=logger,
+                    log_ctx=f"({client.state.device_name})",
+                )
         elif cmd == "GOTO":
             label = args[0].upper()
             if label not in labels:
