@@ -3,8 +3,14 @@ import datetime
 import time
 from dispatcher import register_handler
 from messages.generic import STIMULUS_NAMES, TONE_NAMES, TONE_OUTPUT_DIRECTION_NAMES, CALL_TYPE_NAMES, CALL_STAT_STATE_NAMES, clean_bytes, send_skinny_message, Buf
-from utils.call_management import CALL_STATE_NAMES
-from utils.call_management import update_call_state, mark_call_ended, mark_call_connected, next_synthetic_call_reference
+from utils.call_management import (
+    CALL_STATE_NAMES,
+    apply_call_state_from_skinny,
+    mark_call_ended,
+    mark_call_connected,
+    next_synthetic_call_reference,
+    update_call_state,
+)
 from utils.client import get_local_ip, ip_to_int, _keypad_code_to_char
 from audio_worker import RTPReceiver, RTPSender, wire_rtp_loopback, socket
 from utils.rtp_record import RTPRecorder, rtp_record_base_path
@@ -280,87 +286,6 @@ def parse_set_lamp(client, payload):
     logger.info(f"[RECV] SetLamp")
 
 
-# @register_handler(0x0111, "CallState")
-# def parse_call_state(client, payload):
-#     buf = Buf(payload)
-#     call_state = buf.read_u32()
-#     line_instance = buf.read_u32()
-#     call_reference = buf.read_u32()
-#     privacy = buf.read_u32(0)                                # Missing in CallManager 3.1
-#     precedence_level = buf.read_u32(0)                       # Missing in CallManager 3.1
-#     precedence_domain = buf.read_u32(0)                      # Missing in CallManager 3.1
-#
-#     # call_state, line_instance, call_reference, privacy, precedence_level, precedence_domain = struct.unpack("<IIIIII", payload)
-#     call_state_name = CALL_STATE_NAMES.get(call_state, "UNKNOWN")
-#
-#     current_time = datetime.datetime.now(datetime.timezone.utc)
-#     if str(call_reference) in client.state.calls:
-#         call_started = client.state.calls[str(call_reference)]["call_started"]
-#         call_ended = client.state.calls[str(call_reference)]["call_ended"]
-#     else:
-#         call_started = None
-#         call_ended = None
-#
-#     client.state.calls[str(call_reference)] = {"call_state": call_state, "call_state_name": call_state_name, "line_instance": line_instance, "call_reference": call_reference, "privacy": privacy, "precedence_level": precedence_level, "precedence_domain": precedence_domain, "current_time": current_time, "call_started": call_started, "call_ended": call_ended}
-#     if str(call_reference) not in client.state.calls_list:
-#         client.state.calls_list.append(str(call_reference))
-#
-#     if call_state in [0, 2]:                        # Idle, OnHook
-#         if str(call_reference) in client.state.active_calls_list:
-#             client.state.active_calls_list.remove(str(call_reference))
-#
-#         client.state.calls[str(call_reference)]["call_ended"] = current_time
-#         client.state.active_call = False
-#         client.state.call_active = False
-#         client.state.call_connected = False
-#         client.state.media_active = False
-#         client.events.call_ringing.clear()
-#         client.events.call_connected.clear()
-#         client.events.media_started.clear()
-#         if call_state == 2:
-#             client.events.call_ended.set()
-#         else:
-#             client.events.call_ended.clear()
-#     elif call_state in [3, 4]:                      # RingOut, RingIn
-#         if str(call_reference) not in client.state.active_calls_list:
-#             client.state.active_calls_list.append(str(call_reference))
-#
-#         client.state.call_active = True
-#         client._call_epoch += 1
-#         client.state.last_call_epoch = client._call_epoch
-#         client.events.call_ringing.set()
-#         client.events.call_ended.clear()
-#     elif call_state in [5,]:                        # Connected
-#         if str(call_reference) not in client.state.active_calls_list:
-#             client.state.active_calls_list.append(str(call_reference))
-#
-#         if client.state.calls[str(call_reference)].get("call_started") is None:
-#             client.state.calls[str(call_reference)]["call_started"] = current_time
-#         client.state.call_active = True
-#         client.state.call_connected = True
-#         client.events.call_connected.set()
-#         client.events.call_ended.clear()
-#
-#     # Call Trace Logging
-#     # message_info = get_current_message_info(message_table)
-#     # # trace = shared_state.get("trace", print)
-#     # trace(call_reference, message_info, shared_state, line_instance=line_instance, log=log)
-#
-#     # Track call lifecycle: TODO: working on this next
-#     # previous_state = handle_call_state(line_instance, call_reference, call_state_name, shared_state)
-#     # lifecycle = shared_state["calls"][line_instance][call_reference]["lifecycle"]
-#     # if call_state_name == "OnHook":
-#     #     if "RingIn" in lifecycle and "Connected" not in lifecycle:
-#     #         log_call_event("missed", {}, shared_state, log)
-#     #     elif "RingIn" in lifecycle and "Connected" in lifecycle:
-#     #         log_call_event("received", {}, shared_state, log)
-#     #     elif "RingOut" in lifecycle:
-#     #         log_call_event("placed", {}, shared_state, log)
-#
-#     # logger.info(f"[RECV] CallState callState: {call_state_name} ({call_state}), lineInstance: {line_instance}, callReference: {call_reference}, privacy: {privacy}, precedenceLevel: {precedence_level}, precedenceDomain: {precedence_domain}")
-#     logger.info(f"[RECV] CallState")
-
-
 @register_handler(0x0111, "CallState")
 def parse_call_state(client, payload):
     buf = Buf(payload)
@@ -372,56 +297,22 @@ def parse_call_state(client, payload):
     precedence_level = buf.read_u32(0) if buf.remaining() >= 4 else 0
     precedence_domain = buf.read_u32(0) if buf.remaining() >= 4 else 0
 
-    key = update_call_state(
+    key = apply_call_state_from_skinny(
         client,
-        call_reference=call_reference,
-        line_instance=line_instance,
-        call_state=call_state,
+        call_state,
+        call_reference,
+        line_instance,
         source="CallState",
     )
 
-    call = client.state.calls[key]
-    call["privacy"] = privacy
-    call["precedence_level"] = precedence_level
-    call["precedence_domain"] = precedence_domain
+    call = client.state.calls.get(key)
+    if call:
+        call["privacy"] = privacy
+        call["precedence_level"] = precedence_level
+        call["precedence_domain"] = precedence_domain
 
-    if call_state in [0, 2]:          # Idle / OnHook
-        mark_call_ended(client, call_reference, source="CallState")
-        if not client.state.active_calls_list:
-            _teardown_local_media(client)
-
-    elif call_state in [3, 4]:        # RingOut / RingIn
-        if key not in client.state.active_calls_list:
-            client.state.active_calls_list.append(key)
-
-        client.state.selected_call_reference = key
-        client.state.active_call_line_instance = line_instance
-        client.state.call_active = True
-        client.state.active_call = True
-        client._call_epoch += 1
-        client.state.last_call_epoch = client._call_epoch
-        client.events.call_ringing.set()
-        client.events.call_ended.clear()
-
-    elif call_state == 5:             # Connected
-        mark_call_connected(
-            client,
-            call_reference=call_reference,
-            line_instance=line_instance,
-            source="CallState",
-        )
-        client.state.selected_call_reference = key
-
-    elif call_state == 8:             # Hold
-        from utils.call_management import mark_call_held
-
-        mark_call_held(
-            client,
-            call_reference=call_reference,
-            line_instance=line_instance,
-            source="CallState",
-        )
-        client.state.selected_call_reference = key
+    if call_state in (0, 2) and not client.state.active_calls_list:
+        _teardown_local_media(client)
 
     logger.info(
         f"[RECV] CallState "
@@ -1055,161 +946,4 @@ def parse_display_text(client, payload):
     }
 
     logger.info(f"[RECV] DisplayText='{display_text}'")
-
-
-# def next_synthetic_call_reference(client):
-#     client._call_epoch += 1
-#     client.state.last_call_epoch = client._call_epoch
-#     return f"cm2-{client._call_epoch}"
-#
-#
-# def update_call_state(
-#     client,
-#     *,
-#     call_reference=None,
-#     line_instance=0,
-#     call_state=None,
-#     call_state_name=None,
-#     source="unknown",
-#     calling_party_name="",
-#     calling_party="",
-#     called_party_name="",
-#     called_party="",
-#     remote_name="",
-#     remote_number="",
-# ):
-#     now = datetime.datetime.now(datetime.timezone.utc)
-#
-#     # CM2 may not provide call_reference. Pick a stable fallback.
-#     if not call_reference:
-#         call_reference = (
-#             getattr(client.state, "selected_call_reference", None)
-#             or getattr(client.state, "active_call_reference", None)
-#             or line_instance
-#             or 1
-#         )
-#
-#     key = str(call_reference)
-#
-#     existing = client.state.calls.get(key, {})
-#
-#     call_started = existing.get("call_started")
-#     call_ended = existing.get("call_ended")
-#
-#     if call_state_name is None and call_state is not None:
-#         call_state_name = CALL_STATE_NAMES.get(call_state, "UNKNOWN")
-#
-#     if call_state is None:
-#         call_state = existing.get("call_state", 0)
-#
-#     client.state.calls[key] = {
-#         **existing,
-#         "call_state": call_state,
-#         "call_state_name": call_state_name or existing.get("call_state_name", "UNKNOWN"),
-#         "line_instance": line_instance or existing.get("line_instance", 0),
-#         "call_reference": call_reference,
-#         "current_time": now,
-#         "call_started": call_started,
-#         "call_ended": call_ended,
-#         "last_update_source": source,
-#         "calling_party_name": calling_party_name or existing.get("calling_party_name", ""),
-#         "calling_party": calling_party or existing.get("calling_party", ""),
-#         "called_party_name": called_party_name or existing.get("called_party_name", ""),
-#         "called_party": called_party or existing.get("called_party", ""),
-#         "remote_name": remote_name or existing.get("remote_name", ""),
-#         "remote_number": remote_number or existing.get("remote_number", ""),
-#     }
-#
-#     if key not in client.state.calls_list:
-#         client.state.calls_list.append(key)
-#
-#     return key
-#
-#
-# def mark_call_ringing(client, call_reference, line_instance=0):
-#     key = update_call_state(
-#         client,
-#         call_reference=call_reference,
-#         line_instance=line_instance,
-#         call_state=4,
-#         call_state_name="RingIn",
-#         source="inferred",
-#     )
-#
-#     if key not in client.state.active_calls_list:
-#         client.state.active_calls_list.append(key)
-#
-#     client.state.call_active = True
-#     client.state.active_call = True
-#     client._call_epoch += 1
-#     client.state.last_call_epoch = client._call_epoch
-#     client.events.call_ringing.set()
-#     client.events.call_ended.clear()
-#
-#     return key
-#
-#
-# def mark_call_connected(client, call_reference, line_instance=0, source="inferred"):
-#     key = update_call_state(
-#         client,
-#         call_reference=call_reference,
-#         line_instance=line_instance,
-#         call_state=5,
-#         call_state_name="Connected",
-#         source=source,
-#     )
-#
-#     call = client.state.calls[key]
-#
-#     if call.get("call_started") is None or call.get("call_ended") is not None:
-#         call["call_started"] = datetime.datetime.now(datetime.timezone.utc)
-#         call["call_ended"] = None
-#
-#     if key not in client.state.active_calls_list:
-#         client.state.active_calls_list.append(key)
-#
-#     client.state.call_active = True
-#     client.state.active_call = True
-#     client.state.call_connected = True
-#     client.events.call_connected.set()
-#     client.events.call_ended.clear()
-#
-#     return key
-#
-#
-# def mark_call_ended(client, call_reference=None, source="inferred"):
-#     now = datetime.datetime.now(datetime.timezone.utc)
-#
-#     keys = []
-#
-#     if call_reference:
-#         keys = [str(call_reference)]
-#     else:
-#         keys = list(client.state.active_calls_list or [])
-#
-#     if not keys:
-#         selected = getattr(client.state, "selected_call_reference", None)
-#         if selected:
-#             keys = [str(selected)]
-#
-#     for key in keys:
-#         if key in client.state.calls:
-#             client.state.calls[key]["call_state"] = 2
-#             client.state.calls[key]["call_state_name"] = "OnHook"
-#             client.state.calls[key]["call_ended"] = now
-#             client.state.calls[key]["last_update_source"] = source
-#
-#         if key in client.state.active_calls_list:
-#             client.state.active_calls_list.remove(key)
-#
-#     if not client.state.active_calls_list:
-#         client.state.active_call = False
-#         client.state.call_active = False
-#         client.state.call_connected = False
-#         client.state.media_active = False
-#
-#     client.events.call_ringing.clear()
-#     client.events.call_connected.clear()
-#     client.events.media_started.clear()
-#     client.events.call_ended.set()
 

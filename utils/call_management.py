@@ -90,19 +90,31 @@ def update_call_state(
     return key
 
 
-def mark_call_ringing(client, call_reference, line_instance=0):
+def mark_call_ringing(
+    client,
+    call_reference,
+    line_instance=0,
+    *,
+    call_state=4,
+    source="CallState",
+):
+    if call_state not in (3, 4):
+        call_state = 4
+    call_state_name = CALL_STATE_NAMES.get(call_state, "RingIn")
     key = update_call_state(
         client,
         call_reference=call_reference,
         line_instance=line_instance,
-        call_state=4,
-        call_state_name="RingIn",
-        source="inferred",
+        call_state=call_state,
+        call_state_name=call_state_name,
+        source=source,
     )
 
     if key not in client.state.active_calls_list:
         client.state.active_calls_list.append(key)
 
+    client.state.selected_call_reference = key
+    client.state.active_call_line_instance = line_instance
     client.state.call_active = True
     client.state.active_call = True
     client._call_epoch += 1
@@ -157,6 +169,7 @@ def mark_call_held(client, call_reference, line_instance=0, source="CallState"):
 
     client.state.call_active = True
     client.state.active_call = True
+    client.state.selected_call_reference = key
     client.state.call_connected = any(
         client.state.calls.get(str(r), {}).get("call_state") == 5
         for r in client.state.active_calls_list
@@ -165,6 +178,50 @@ def mark_call_held(client, call_reference, line_instance=0, source="CallState"):
     client.events.call_connected.clear()
     client.events.media_started.clear()
     return key
+
+
+def apply_call_state_from_skinny(
+    client,
+    call_state: int,
+    call_reference: int,
+    line_instance: int,
+    *,
+    source: str = "CallState",
+) -> str:
+    """Apply Skinny CallState (0x0111) to per-call and aggregate tracking."""
+    if call_state in (0, 2):
+        mark_call_ended(client, call_reference, source=source)
+    elif call_state in (3, 4):
+        mark_call_ringing(
+            client,
+            call_reference,
+            line_instance,
+            call_state=call_state,
+            source=source,
+        )
+    elif call_state == 5:
+        mark_call_connected(
+            client,
+            call_reference=call_reference,
+            line_instance=line_instance,
+            source=source,
+        )
+    elif call_state == 8:
+        mark_call_held(
+            client,
+            call_reference=call_reference,
+            line_instance=line_instance,
+            source=source,
+        )
+    else:
+        update_call_state(
+            client,
+            call_reference=call_reference,
+            line_instance=line_instance,
+            call_state=call_state,
+            source=source,
+        )
+    return str(call_reference)
 
 
 def sync_call_flags(client) -> None:

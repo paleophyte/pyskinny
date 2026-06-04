@@ -23,6 +23,7 @@ from utils.call_management import mark_call_connected
 
 def _make_client(*, call_ref: int = 16777221) -> SCCPClient:
     state = PhoneState(server="127.0.0.1", mac="AABBCCDDEEFF", model="7970")
+    state.enable_audio = False
     state.softkey_template = {
         "1": {"label": "Hold", "event": 3},
         "2": {"label": "Resume", "event": 10},

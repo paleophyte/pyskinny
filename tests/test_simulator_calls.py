@@ -40,6 +40,7 @@ def sim_server():
 
 def _register_client(host: str, skinny_port: int, mac: str) -> tuple[SCCPClient, PhoneState]:
     state = PhoneState(server=host, mac=mac, model="7970", port=skinny_port, tftp_port=6969)
+    state.enable_audio = False
     client = SCCPClient(state)
     client.get_tftp_config = False
     client.start()

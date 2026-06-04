@@ -34,6 +34,8 @@ def test_stop_unregisters_after_connected_call(sim_server):
 
     state_a = PhoneState(server=host, mac="AABBCCDDEE31", model="7970", port=port, tftp_port=6969)
     state_b = PhoneState(server=host, mac="AABBCCDDEE32", model="7970", port=port, tftp_port=6969)
+    state_a.enable_audio = False
+    state_b.enable_audio = False
     client_a = SCCPClient(state_a)
     client_b = SCCPClient(state_b)
     client_a.get_tftp_config = False
