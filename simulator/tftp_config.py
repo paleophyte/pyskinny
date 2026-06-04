@@ -53,7 +53,9 @@ def patch_sep_config_for_sim(
             count=1,
         )
 
-    text = re.sub(r"<webAccess>\d+</webAccess>", "<webAccess>1</webAccess>", text)
+    # Do not rewrite webAccess: on CUCM, 0 often means enabled (7912 ignores this tag
+    # for CGI anyway — see README / utils.phone_web_probe; gk* profile OpFlags bit 7).
+
 
     if "<lines>" not in text and "</device>" in text:
         dn = escape(directory_number)

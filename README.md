@@ -500,17 +500,21 @@ Use two channels in parallel:
 |------|------|
 | `examples/run_simulator` | SCCP/TFTP (register, dial tone, call state) |
 | `python -m utils.phone_remote` | HTTP CGI — press softkeys / digits on the physical LCD |
+| `python -m utils.phone_web_probe` | Diagnose phone HTTP (`GET /` vs `/CGI/*`) |
 
 ```bash
 set PHONE_IP=10.102.10.209
 set PHONE_USER=Administrator
 set PHONE_PASS=your_phone_web_password
 
+python -m utils.phone_web_probe --ip %PHONE_IP% --user %PHONE_USER% --password %PHONE_PASS%
 python -m utils.phone_remote screenshot -o screen.png
 python -m utils.phone_remote newcall          # Soft2 by default (PHONE_NEW_CALL_SOFTKEY)
 python -m utils.phone_remote keys 1001
 python -m utils.phone_remote interactive
 ```
+
+**7912 + `phone_remote`:** The embedded web server is not a normal home page on port 80. `curl http://<phone>/` often yields *empty reply* even when CGI push works. Use `phone_web_probe` to test `/CGI/Screenshot` and `/CGI/Execute`. On CUCM, `<webAccess>0</webAccess>` in `SEP*.cnf.xml` is normal when the admin “Web Access” checkbox is checked (0 = enabled in that field, not “off”). For full web UI / geometry, copy **`United_States/gkdefault.cfg`** and **`gk<mac>`** (binary, from CUCM TFTP via `cfgfmt`) into your `--tftp-root`; web is gated by **OpFlags bit 7** in those profiles (bit clear = web allowed). XML push auth goes to the simulator’s `authenticate.asp`, which must return plain `AUTHORIZED` (not XML).
 
 On register, the simulator log should show `legacy` for a 7912 (`type=0x7537`). New Call should log `outbound dial ... tone=33 (0x21) legacy=True` matching CUCM (`cm_cap.pcapng`: SetRinger → SetSpeakerMode → SetLamp → CallState OffHook → SelectSoftKeys → DisplayPromptStatus → ActivateCallPlane → StartTone tone 33 dir 0).
 
