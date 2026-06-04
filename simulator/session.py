@@ -291,6 +291,8 @@ class SkinnySession:
             self.hub.hold(self)
         elif softkey_id == payloads.SK_RESUME:
             self.hub.resume(self)
+        elif softkey_id == payloads.SK_TRANSFER:
+            self.hub.on_transfer_softkey(self)
         elif softkey_id == payloads.SK_ENDCALL:
             self.hub.end_call(source=self)
         return True

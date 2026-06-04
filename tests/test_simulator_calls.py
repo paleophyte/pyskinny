@@ -124,6 +124,43 @@ def test_two_phones_hold_and_resume(sim_server):
         assert state_b.is_unregistered.wait(timeout=10)
 
 
+def test_simulator_blind_transfer(sim_server):
+    sim, host, port = sim_server
+
+    client_a, state_a = _register_client(host, port, "AABBCCDDEE05")
+    client_b, state_b = _register_client(host, port, "AABBCCDDEE06")
+    client_c, state_c = _register_client(host, port, "AABBCCDDEE07")
+
+    dn_b = sim.registry.get(state_b.device_name)
+    dn_c = sim.registry.get(state_c.device_name)
+
+    try:
+        _dial(client_a, dn_b)
+        assert client_b.events.call_ringing.wait(timeout=10)
+        client_b.press_softkey("Answer")
+        assert client_a.events.call_connected.wait(timeout=10)
+        assert client_b.events.call_connected.wait(timeout=10)
+
+        client_a.blind_transfer(dn_c, pause=0.15)
+
+        assert client_c.events.call_ringing.wait(timeout=10), "transfer target did not ring"
+        deadline = time.time() + 5
+        while time.time() < deadline and client_a.state.active_calls_list:
+            time.sleep(0.1)
+        assert not client_a.state.active_calls_list, "transferor should be on hook"
+
+        client_c.press_softkey("Answer")
+        assert client_b.events.call_connected.wait(timeout=10), "transferred party not connected"
+        assert client_c.events.call_connected.wait(timeout=10), "transfer target not connected"
+    finally:
+        client_a.stop()
+        client_b.stop()
+        client_c.stop()
+        state_a.is_unregistered.wait(timeout=10)
+        state_b.is_unregistered.wait(timeout=10)
+        state_c.is_unregistered.wait(timeout=10)
+
+
 def test_simulator_auto_answer_connects_without_manual_answer():
     sim = SkinnySimulator(
         host="127.0.0.1",

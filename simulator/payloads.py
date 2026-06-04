@@ -16,12 +16,14 @@ CALL_STATE_RINGOUT = 3
 CALL_STATE_RINGIN = 4
 CALL_STATE_CONNECTED = 5
 CALL_STATE_HOLD = 8
+CALL_STATE_TRANSFER = 10
 CALL_STATE_OFFHOOK = 1
 CALL_STATE_PROCEED = 12
 
 # Skinny soft-key events (match messages/generic.py)
 SK_NEWCALL = 2
 SK_HOLD = 3
+SK_TRANSFER = 4
 SK_ENDCALL = 9
 SK_RESUME = 10
 SK_ANSWER = 11
@@ -97,6 +99,7 @@ def softkey_template_res(*, legacy: bool = False) -> bytes:
         (b"Hold\x00", 3),
         (b"Resume\x00", 10),
         (b"EndCall\x00", 9),
+        (b"Transfer\x00", 4),
     ]
     body = struct.pack("<III", 0, len(keys), 12)
     for label, event in keys:

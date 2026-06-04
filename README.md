@@ -534,6 +534,7 @@ Wireshark on the sim host:
 - [ ] Try to add better call handling to run_cli.py (or to base SCCPClient). It's currently very difficult to manage multiple calls (i.e., place a call on hold and then dial a second number)
 - [x] CallManager simulator (lightweight CM server that phones can register to)
 - [x] Simulator: outbound/inbound call signaling between two registered clients
+- [x] Simulator: blind transfer (Transfer → dial → Transfer)
 - [ ] SIP phone support
 - [x] Console based "GUI" SCCP Client
 - [ ] Wrap into a small **package** (`pip install pyskinny`)

@@ -50,6 +50,9 @@ class SimCall:
     ivr: bool = False
     media_ports: dict = field(default_factory=dict)
     ivr_menu_active: bool = False
+    transfer_active: bool = False
+    transfer_initiator: SkinnySession | None = None
+    transfer_digits: str = ""
 
 
 class CallHub:
@@ -131,6 +134,20 @@ class CallHub:
 
         if call.ivr and call.state == "connected" and call.ivr_menu_active and self.ivr_menu:
             self.ivr_menu.on_keypad(call, digit, self)
+            return
+
+        if call.transfer_active:
+            if caller is not call.transfer_initiator:
+                return
+            if digit == "#":
+                self._complete_blind_transfer(call)
+                return
+            call.transfer_digits += digit
+            caller.send(
+                payloads.dialed_number(
+                    call.transfer_digits, line=call.line, call_ref=call.call_ref
+                )
+            )
             return
 
         if call.state != "dialing":
@@ -462,6 +479,131 @@ class CallHub:
         call.media_ports.clear()
         logger.info("Resume call ref=%s by %s", call.call_ref, session.device_name)
         self._notify_resumed(call)
+
+    def on_transfer_softkey(self, session: SkinnySession) -> None:
+        call = session.active_call
+        if not call or call.state != "connected" or call.ivr:
+            return
+        if call.transfer_active:
+            if session is call.transfer_initiator:
+                self._complete_blind_transfer(call)
+            return
+        self._begin_blind_transfer(call, session)
+
+    def _begin_blind_transfer(self, call: SimCall, initiator: SkinnySession) -> None:
+        call.transfer_active = True
+        call.transfer_initiator = initiator
+        call.transfer_digits = ""
+        other = call.callee if initiator is call.caller else call.caller
+        logger.info(
+            "Blind transfer begin ref=%s by %s (other=%s)",
+            call.call_ref,
+            initiator.device_name,
+            other.device_name if other else "?",
+        )
+        initiator.send_many([
+            payloads.stop_tone(call.line, call.call_ref),
+            payloads.call_state(payloads.CALL_STATE_TRANSFER, call.line, call.call_ref),
+            payloads.start_tone(
+                payloads.TONE_DIAL, call.line, call.call_ref, legacy=initiator._legacy_phone
+            ),
+            payloads.display_prompt_status("Transfer to", call.line, call.call_ref),
+            payloads.select_soft_keys(call.line, call.call_ref, softkey_set_index=1),
+        ])
+        if other:
+            other.send_many([
+                payloads.start_tone(
+                    payloads.TONE_REMOTE_HOLD, call.line, call.call_ref, legacy=other._legacy_phone
+                ),
+                payloads.display_prompt_status("Remote Hold", call.line, call.call_ref),
+            ])
+
+    def _complete_blind_transfer(self, call: SimCall) -> None:
+        if not call.transfer_active or not call.transfer_initiator:
+            return
+        target_dn = call.transfer_digits.strip()
+        if not target_dn:
+            logger.info("Blind transfer cancelled ref=%s (no digits)", call.call_ref)
+            call.transfer_active = False
+            call.transfer_initiator = None
+            call.transfer_digits = ""
+            return
+        initiator = call.transfer_initiator
+        remaining = call.callee if initiator is call.caller else call.caller
+        if remaining is None:
+            return
+        logger.info(
+            "Blind transfer complete ref=%s %s -> DN %s (remaining=%s)",
+            call.call_ref,
+            initiator.device_name,
+            target_dn,
+            remaining.device_name,
+        )
+        call.transfer_active = False
+        call.transfer_initiator = None
+        call.transfer_digits = ""
+        self._execute_blind_transfer(call, initiator, remaining, target_dn)
+
+    def _execute_blind_transfer(
+        self,
+        call: SimCall,
+        initiator: SkinnySession,
+        remaining: SkinnySession,
+        target_dn: str,
+    ) -> None:
+        line, ref = call.line, call.call_ref
+
+        if self.media_hub:
+            self.media_hub.stop_call(ref)
+
+        if call.media_ports:
+            for party in (initiator, remaining):
+                party.send(payloads.stop_media_transmission(ref))
+                party.send(payloads.close_receive_channel(ref))
+            call.media_ports.clear()
+
+        self._send_party_on_hook(initiator, line, ref)
+
+        call.caller = remaining
+        call.callee = None
+        call.dialed = target_dn
+        call.state = "dialing"
+        call.ivr = False
+        call.ivr_menu_active = False
+        remaining.active_call = call
+
+        remaining.send_many([
+            payloads.stop_tone(line, ref),
+            payloads.call_state(payloads.CALL_STATE_OFFHOOK, line, ref),
+            payloads.activate_call_plane(line),
+            payloads.call_state(payloads.CALL_STATE_PROCEED, line, ref),
+            payloads.start_tone(
+                payloads.TONE_DIAL, line, ref, legacy=remaining._legacy_phone, direction=2
+            ),
+            payloads.display_prompt_status("Transfer", line, ref),
+            payloads.select_soft_keys(line, ref, softkey_set_index=8),
+        ])
+        self._try_complete_dial(call)
+
+    def _send_party_on_hook(self, party: SkinnySession, line: int, call_ref: int) -> None:
+        party.active_call = None
+        party.awaiting_media_ack = False
+        if party._legacy_phone:
+            party.send_many([
+                payloads.stop_tone(line, call_ref),
+                payloads.set_lamp(stimulus=9, instance=line, lamp_mode=1),
+                payloads.clear_prompt_status(line, call_ref),
+                payloads.call_state(payloads.CALL_STATE_ONHOOK, line, call_ref),
+                payloads.legacy_select_softkeys_onhook(),
+                payloads.display_prompt_status("Ready", line, 0),
+            ])
+        else:
+            party.send_many([
+                payloads.stop_tone(line, call_ref),
+                payloads.call_state(payloads.CALL_STATE_ONHOOK, line, call_ref),
+                payloads.display_prompt_status("Ready", line, 0),
+                payloads.select_soft_keys(line, 0, softkey_set_index=0),
+            ])
 
     def _notify_hold(self, call: SimCall, *, holder: SkinnySession) -> None:
         assert call.callee is not None
