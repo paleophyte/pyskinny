@@ -63,7 +63,10 @@ Simulator tests (no CUCM):
 
 ```bash
 pytest tests/test_simulator.py -v
+pytest tests/test_cucm_capture_regression.py -v   # wire format vs cm_cap / cm_call pcaps
 ```
+
+Regenerate committed capture fixtures after updating pcaps: `python -m utils.extract_cucm_capture_fixtures`
 
 ---
 

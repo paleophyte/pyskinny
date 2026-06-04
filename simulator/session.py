@@ -317,7 +317,7 @@ class SkinnySession:
             payloads.set_lamp(stimulus=9, instance=line, lamp_mode=2),
             payloads.call_state(payloads.CALL_STATE_OFFHOOK, line, ref),
             payloads.select_soft_keys(line, ref, softkey_set_index=4),
-            payloads.display_prompt_status("", line, ref),
+            payloads.legacy_display_prompt_dial(line, ref),
             payloads.activate_call_plane(line),
             payloads.start_tone(payloads.TONE_DIAL, line, ref, legacy=False, direction=0),
         ]

@@ -238,7 +238,7 @@ class CallHub:
             payloads.open_receive_channel(ref),
             payloads.stop_tone(line, ref),
             payloads.call_state(payloads.CALL_STATE_CONNECTED, line, ref),
-            payloads.select_soft_keys(line, ref, softkey_set_index=1),
+            payloads.select_soft_keys(line, ref, softkey_set_index=1, valid_key_mask=0xFFFFFDFF),
             payloads.legacy_display_text(caller_dn, line, ref),
             payloads.call_info(
                 caller_name, caller_dn, callee_name, callee_dn,

@@ -392,6 +392,16 @@ def legacy_display_text(
     return pack_message(0x0112, body)
 
 
+def legacy_display_prompt_dial(line_instance: int = 1, call_reference: int = 0) -> bytes:
+    """Empty dial prompt during New Call (CUCM cm_cap frame 85, tag 0x8020)."""
+    from simulator.protocol import pack_message
+
+    raw = b"\x80\x20" + b"\x00" * 30
+    raw = raw[:32].ljust(32, b"\x00")
+    body = struct.pack("<I", 0) + raw + struct.pack("<II", line_instance, call_reference)
+    return pack_message(0x0112, body)
+
+
 def display_pri_notify(
     text: str,
     *,
