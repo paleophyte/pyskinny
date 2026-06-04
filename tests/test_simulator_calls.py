@@ -272,6 +272,54 @@ def test_simulator_consulted_transfer(sim_server):
         _stop_client(client_c, state_c)
 
 
+def test_simulator_conference(sim_server):
+    sim, host, port = sim_server
+
+    client_a, state_a = _register_client(host, port, "AABBCCDDEE18")
+    client_b, state_b = _register_client(host, port, "AABBCCDDEE19")
+    client_c, state_c = _register_client(host, port, "AABBCCDDEE1A")
+
+    dn_b = sim.registry.get(state_b.device_name)
+    dn_c = sim.registry.get(state_c.device_name)
+
+    try:
+        _dial(client_a, dn_b)
+        assert client_b.events.call_ringing.wait(timeout=10)
+        client_b.press_softkey("Answer")
+        assert client_a.events.call_connected.wait(timeout=10)
+        assert client_b.events.call_connected.wait(timeout=10)
+
+        client_a.events.call_connected.clear()
+
+        def _answer_c():
+            assert client_c.events.call_ringing.wait(timeout=10)
+            client_c.press_softkey("Answer")
+
+        answer_thread = threading.Thread(target=_answer_c, daemon=True)
+        answer_thread.start()
+        client_a.conference(dn_c, pause=0.15, consult_timeout=10)
+        answer_thread.join(timeout=5)
+        time.sleep(0.25)
+
+        shared_refs = set(client_a.state.active_calls_list) & set(client_b.state.active_calls_list) & set(client_c.state.active_calls_list)
+        assert shared_refs, (
+            f"expected shared conference ref; A={client_a.state.active_calls_list} "
+            f"B={client_b.state.active_calls_list} C={client_c.state.active_calls_list}"
+        )
+        ref = str(min(shared_refs, key=int))
+        assert client_a.state.calls[ref]["call_state"] == 5
+        assert client_b.state.calls[ref]["call_state"] == 5
+        assert client_c.state.calls[ref]["call_state"] == 5
+        assert client_a.state.active_calls_list, "initiator should stay in call"
+        assert client_b.state.active_calls_list, "held party should stay in call"
+        assert client_c.state.active_calls_list, "added party should stay in call"
+        assert client_a.state.current_prompt == "Conference"
+    finally:
+        _stop_client(client_a, state_a)
+        _stop_client(client_b, state_b)
+        _stop_client(client_c, state_c)
+
+
 def test_simulator_auto_answer_connects_without_manual_answer():
     sim = SkinnySimulator(
         host="127.0.0.1",

@@ -12,6 +12,7 @@ from client import SCCPClient
 from state import PhoneState
 from ui.cli import load_cli_spec, resolve_command_with_tokens
 from ui.cli_handlers import (
+    exec_phone_conference,
     exec_phone_consult_transfer,
     exec_phone_end,
     exec_phone_hold,
@@ -29,8 +30,9 @@ def _make_client(*, call_ref: int = 16777221) -> SCCPClient:
         "1": {"label": "Hold", "event": 3},
         "2": {"label": "Resume", "event": 10},
         "3": {"label": "Transfer", "event": 4},
-        "4": {"label": "EndCall", "event": 9},
-        "5": {"label": "NewCall", "event": 2},
+        "4": {"label": "Confrn", "event": 13},
+        "5": {"label": "EndCall", "event": 9},
+        "6": {"label": "NewCall", "event": 2},
     }
     client = SCCPClient(state)
     mark_call_connected(client, call_reference=call_ref, line_instance=1)
@@ -90,7 +92,8 @@ def test_blind_transfer_sequence(mock_keypad, mock_softkey):
 def test_consulted_transfer_sequence(mock_keypad, mock_softkey):
     client = _make_client()
     with patch.object(client.events.call_connected, "wait", return_value=True):
-        client.consulted_transfer("1001", pause=0, consult_timeout=0.1)
+        with patch.object(client, "_wait_new_call_connected", return_value=True):
+            client.consulted_transfer("1001", pause=0, consult_timeout=0.1)
 
     assert mock_softkey.call_count == 2
     mock_softkey.assert_any_call(client, 1, 4, 16777221)
@@ -107,6 +110,31 @@ def test_cli_consult_transfer(mock_consult):
         lambda m: None,
     )
     mock_consult.assert_called_once_with("1002")
+
+
+@patch("client.handle_softkey_press")
+@patch("client.handle_keypad_press")
+def test_conference_sequence(mock_keypad, mock_softkey):
+    client = _make_client()
+    with patch.object(client.events.call_connected, "wait", return_value=True):
+        with patch.object(client, "_wait_new_call_connected", return_value=True):
+            client.conference("1001", pause=0, consult_timeout=0.1)
+
+    assert mock_softkey.call_count == 2
+    mock_softkey.assert_any_call(client, 1, 13, 16777221)
+    assert [c.args[2] for c in mock_keypad.call_args_list] == [1, 0, 0, 1]
+
+
+@patch("client.SCCPClient.conference")
+def test_cli_conference(mock_conf):
+    client = _make_client()
+    exec_phone_conference(
+        _Ctx(client),
+        "phone conference 1003",
+        ["phone", "conference", "1003"],
+        lambda m: None,
+    )
+    mock_conf.assert_called_once_with("1003")
 
 
 class _Ctx:
@@ -221,3 +249,13 @@ def test_macro_consult_transfer(mock_consult, _logger):
     instructions, _ = parse_macro_script("CONSULT_TRANSFER 1003, END")
     run_macro(client, instructions, {}, stop)
     mock_consult.assert_called_once_with("1003")
+
+
+@patch("ui.macro_cli.logger")
+@patch("client.SCCPClient.conference")
+def test_macro_conference(mock_conf, _logger):
+    client = _make_client()
+    stop = threading.Event()
+    instructions, _ = parse_macro_script("CONFERENCE 1004, END")
+    run_macro(client, instructions, {}, stop)
+    mock_conf.assert_called_once_with("1004")

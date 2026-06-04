@@ -563,7 +563,7 @@ See also [docs/lab-cookbook.md](docs/lab-cookbook.md) for the current simulator 
 - [x] `pyproject.toml` / `pip install pyskinny`
 
 **Later**
-- [ ] Conference (sim + client)
+- [x] Conference (sim + client)
 - [x] Consulted transfer (sim + client)
 - [ ] CM2 CallInfo / synthetic ref hardening (when CM2 lab available)
 - [ ] Optional mini web UI for phone remote control

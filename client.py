@@ -376,7 +376,7 @@ class SCCPClient:
             found = self._call_ref_for_state(8)
             if found:
                 return found
-        if softkey_name in ("Hold", "EndCall", "Transfer"):
+        if softkey_name in ("Hold", "EndCall", "Transfer", "Confrn"):
             found = self._call_ref_for_state(5)
             if found:
                 return found
@@ -425,6 +425,26 @@ class SCCPClient:
                 return
         self.logger.warning(f"({self.state.device_name}) No such softkey {softkey_name}")
 
+    def _wait_new_call_connected(self, refs_before, timeout: float) -> bool:
+        """Wait until a call ref not in *refs_before* reaches Connected (state 5)."""
+        import time
+
+        before = {str(r) for r in (refs_before or [])}
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            for key in self.state.active_calls_list or []:
+                sk = str(key)
+                if sk in before:
+                    continue
+                if self.state.calls.get(sk, {}).get("call_state") == 5:
+                    return True
+            if self.events.call_connected.wait(timeout=0.05):
+                for key in self.state.active_calls_list or []:
+                    sk = str(key)
+                    if sk not in before and self.state.calls.get(sk, {}).get("call_state") == 5:
+                        return True
+        return False
+
     def blind_transfer(self, number: str, *, pause: float = 0.3) -> None:
         """Blind transfer active call: Transfer -> dial -> Transfer."""
         import time
@@ -456,6 +476,7 @@ class SCCPClient:
         import time
 
         self.events.call_connected.clear()
+        refs_before = list(self.state.active_calls_list or [])
         self.press_softkey("Transfer")
         time.sleep(pause)
         for ch in number:
@@ -469,11 +490,50 @@ class SCCPClient:
                 continue
             handle_keypad_press(self, 1, code)
             time.sleep(0.05)
-        if not self.events.call_connected.wait(timeout=consult_timeout):
+        if not self._wait_new_call_connected(refs_before, consult_timeout):
             self.logger.warning("Consult transfer: consult party did not connect in time")
             return
         time.sleep(pause)
+        found = self._call_ref_for_state(5)
+        if found:
+            _line, ref = found
+            self.state.selected_call_reference = str(ref)
         self.press_softkey("Transfer")
+
+    def conference(
+        self,
+        number: str,
+        *,
+        pause: float = 0.3,
+        consult_timeout: float = 30.0,
+    ) -> None:
+        """Conference: Confrn -> dial -> wait for answer -> Confrn (all parties stay)."""
+        import time
+
+        self.events.call_connected.clear()
+        refs_before = list(self.state.active_calls_list or [])
+        self.press_softkey("Confrn")
+        time.sleep(pause)
+        for ch in number:
+            if ch == "*":
+                code = 0x0E
+            elif ch == "#":
+                code = 0x0F
+            elif ch.isdigit():
+                code = int(ch)
+            else:
+                continue
+            handle_keypad_press(self, 1, code)
+            time.sleep(0.05)
+        if not self._wait_new_call_connected(refs_before, consult_timeout):
+            self.logger.warning("Conference: third party did not connect in time")
+            return
+        time.sleep(pause)
+        found = self._call_ref_for_state(5)
+        if found:
+            _line, ref = found
+            self.state.selected_call_reference = str(ref)
+        self.press_softkey("Confrn")
 
     def press_stimulus(self, button_type, instance):
         # Simplified logic. Find the key in the softkey_template, send the event.

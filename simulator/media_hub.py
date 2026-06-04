@@ -198,6 +198,67 @@ class SimMediaHub:
         )
         return True
 
+    def start_conference(self, call: SimCall) -> bool:
+        """Three-party conference bridge (requires bridge or loopback mode)."""
+        if self.mode not in ("bridge", "loopback", "tone"):
+            return False
+        parties = [p for p in (call.caller, call.callee, call.third_party) if p]
+        if len(parties) < 3:
+            return False
+        for party in parties:
+            if id(party) not in call.media_ports:
+                return False
+
+        pt, spec, _ = resolve_rtp_payload_type(self.compression_type)
+        if not spec.encode_supported:
+            pt = 0
+
+        sim_session = SimMediaSession(call_ref=call.call_ref)
+        sim_ip_int = _ip_to_le_int(self.advertise_ip)
+
+        for party in parties:
+            rx = RTPReceiver(worker=None, bind_ip="0.0.0.0", port=0, log=logger)
+            rx.start()
+            phone_port = call.media_ports[id(party)]
+            tx = RTPSender(
+                party.station_ip,
+                phone_port,
+                ptime_ms=20,
+                payload_type=pt,
+                log=logger,
+            )
+            tx.start()
+            sim_session.legs.append(
+                _PartyLeg(session=party, phone_port=phone_port, rx=rx, tx=tx)
+            )
+            party.send(
+                payloads.start_media_transmission(
+                    call.call_ref,
+                    sim_ip_int,
+                    rx.port,
+                    precedence_value=0,
+                )
+            )
+            if self.mode == "tone":
+                tx.send_tone(self.tone_hz)
+
+        if self.mode == "bridge" and len(sim_session.legs) == 3:
+            for i, leg_i in enumerate(sim_session.legs):
+                for j, leg_j in enumerate(sim_session.legs):
+                    if i == j:
+                        continue
+                    echo = EchoSource(8000)
+                    leg_i.rx.attach_echo(echo)
+                    leg_j.tx.send_echo(echo)
+
+        self._sessions[call.call_ref] = sim_session
+        logger.info(
+            "SimMediaHub conference ref=%s legs=%s",
+            call.call_ref,
+            [leg.session.device_name for leg in sim_session.legs],
+        )
+        return True
+
     def _start_ivr_tx(self, call: SimCall, leg: _PartyLeg, tx: RTPSender, rx: RTPReceiver) -> None:
         """IVR calls: silence until macro PLAY; menu script drives RTP."""
         tx.send_silence()

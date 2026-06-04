@@ -316,6 +316,16 @@ def run_macro(client: SCCPClient, instructions, labels, stop_event: threading.Ev
                 else:
                     client.consulted_transfer(dest)
                     sleep_interruptible(0.5, stop_event, client.events.call_ended)
+        elif cmd == "CONFERENCE":
+            if not args:
+                logger.error("CONFERENCE requires a destination DN")
+            else:
+                dest = resolve_macro_value(client.state.kv_dict, " ".join(args))
+                if not dest or dest.startswith("$"):
+                    logger.error("CONFERENCE: unresolved destination %r", " ".join(args))
+                else:
+                    client.conference(dest)
+                    sleep_interruptible(0.5, stop_event, client.events.call_ended)
         elif cmd == "END":
             client.press_softkey("EndCall")
         elif cmd == "PLAY":

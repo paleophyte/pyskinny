@@ -27,6 +27,7 @@ SK_TRANSFER = 4
 SK_ENDCALL = 9
 SK_RESUME = 10
 SK_ANSWER = 11
+SK_CONFRN = 13
 
 # Cisco tone IDs used by pyskinny client
 TONE_DIAL = 33  # InsideDialTone (0x21) — CUCM uses this for 7912 New Call
@@ -100,6 +101,7 @@ def softkey_template_res(*, legacy: bool = False) -> bytes:
         (b"Resume\x00", 10),
         (b"EndCall\x00", 9),
         (b"Transfer\x00", 4),
+        (b"Confrn\x00", 13),
     ]
     body = struct.pack("<III", 0, len(keys), 12)
     for label, event in keys:
@@ -128,7 +130,7 @@ def softkey_set_res(*, legacy: bool = False) -> bytes:
     # template_index, info_index (see messages/generic.py)
     set_defs: dict[int, list[tuple[int, int]]] = {
         0: [(2, 302), (1, 301)],           # On Hook — NewCall, Redial
-        1: [(3, 303), (9, 309), (4, 304)],  # Connected — Hold, EndCall, Transfer
+        1: [(3, 303), (9, 309), (4, 304), (13, 313)],  # Connected — Hold, EndCall, Transfer, Confrn
         2: [(10, 310), (9, 309)],           # On Hold — Resume, EndCall
         3: [(11, 311)],                     # Ring In — Answer
         4: [(9, 309)],                      # Off Hook — EndCall

@@ -160,7 +160,20 @@ If you press the second **Transfer** before **C** answers, the sim treats it as 
 
 ---
 
-## 9. Verify with tests
+## 9. Conference (sim)
+
+On **A** connected to **B** — add **C**; all three stay on the call:
+
+1. **Confrn** → dial **C** → wait for **C** to answer.
+2. **Confrn** again → three-way **Conference** (display shows "Conference").
+
+CLI: `phone conference 5002`  
+Macro: `CONFERENCE 5002`  
+Python: `client.conference("5002")`
+
+---
+
+## 10. Verify with tests
 
 ```powershell
 # Simulator call flows (no audio device needed)
@@ -173,7 +186,7 @@ pytest -m "not integration" -v
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 | Symptom | Check |
 |---------|--------|

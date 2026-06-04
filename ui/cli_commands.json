@@ -36,6 +36,9 @@
     {"command": "consult-transfer", "help": "Consulted transfer (dial, talk, then complete)",                                       "subcommands": [
       {"command": "%W",           "help": "Destination number",            "function": "exec_phone_consult_transfer"}
     ]},
+    {"command": "conference",     "help": "Add party to conference (dial, talk, then merge)",                                       "subcommands": [
+      {"command": "%W",           "help": "Destination number",            "function": "exec_phone_conference"}
+    ]},
     {"command": "send",           "help": "Send skinny message to call manager",                                                      "subcommands": [
       {"command": "softkeyevent", "help": "Send softkeyevent message",                                                                "subcommands": [
         {"command": "%W",         "help": "Softkey name",                                                         "optional": false,  "subcommands": [
