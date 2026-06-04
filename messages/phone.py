@@ -226,7 +226,8 @@ def parse_start_tone(client, payload):
     tone_output_direction_name = TONE_OUTPUT_DIRECTION_NAMES.get(tone_output_direction, "UNKNOWN")
 
     client.state.play_tones = {"tone": tone, "tone_name": tone_name, "tone_output_direction": tone_output_direction, "tone_output_direction_name": tone_output_direction_name, "call_reference": call_reference, "line_instance": line_instance}
-    client.audio.set_tone(line_instance, tone, gain_db=client.state.tone_volume)
+    if client.state.enable_audio:
+        client.audio.set_tone(line_instance, tone, gain_db=client.state.tone_volume)
 
     # Call Trace Logging
     # message_info = get_current_message_info(message_table)

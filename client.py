@@ -8,7 +8,7 @@ from messages.keepalive import send_keepalive_req
 from state import PhoneState
 from utils.tftp import get_device_config_via_tftp
 from messages.generic import handle_softkey_press, handle_keypad_press, handle_button_press, TONE_FOLDER, TONE_LOOKUP, send_onhook, send_offhook
-from audio_worker import LoopingAudioWorker
+from audio_worker import LoopingAudioWorker, NullAudioWorker
 import os
 import threading
 from types import SimpleNamespace
@@ -31,14 +31,17 @@ class SCCPClient:
         self.state._prompt_watchers.append(self._on_prompt_changed)
         self._stop_event = threading.Event()
         self._threads = []
-        self.audio = LoopingAudioWorker(
-            samplerate=44100,  # your key_beep.wav was 44.1k in logs
-            channels=1,
-            blocksize=1024,
-            tone_resolver=_tone_path_from_id,
-            master_gain_db=state.tone_volume  # optional: treat as master gain
-        )
-        self.audio.start()
+        if state.enable_audio:
+            self.audio = LoopingAudioWorker(
+                samplerate=44100,  # your key_beep.wav was 44.1k in logs
+                channels=1,
+                blocksize=1024,
+                tone_resolver=_tone_path_from_id,
+                master_gain_db=state.tone_volume  # optional: treat as master gain
+            )
+            self.audio.start()
+        else:
+            self.audio = NullAudioWorker()
         self.events = SimpleNamespace(
             call_ringing=threading.Event(),  # set when Ring-In
             call_connected=threading.Event(),  # set when Connected

@@ -493,6 +493,46 @@ class LoopingAudioWorker:
                 pass
 
 
+class NullAudioWorker:
+    """No-op audio backend; used when PhoneState.enable_audio is False."""
+
+    def start(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+    def set_master_gain_db(self, db: float) -> None:
+        pass
+
+    def set_tone(self, line: int, tone_id: int, gain_db: float = 0.0) -> None:
+        pass
+
+    def clear_tone(self, line: int) -> None:
+        pass
+
+    def clear_all(self) -> None:
+        pass
+
+    def play_wav_once(self, path: str, gain_db: float = 0.0) -> None:
+        pass
+
+    def play_bytes_once(self, buf_f32_mono: bytes, gain_db: float = 0.0) -> None:
+        pass
+
+    def add_stream(self, source_id: str, gain_db: float = 0.0) -> None:
+        pass
+
+    def remove_stream(self, source_id: str) -> None:
+        pass
+
+    def feed_stream(self, source_id: str, pcm_f32, src_rate: int) -> None:
+        pass
+
+    def set_stream_gain_db(self, source_id: str, gain_db: float) -> None:
+        pass
+
+
 class RTPReceiver:
     """
     Minimal RTP receiver -> float32 mono -> AudioWorker.feed_stream().
