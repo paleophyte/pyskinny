@@ -16,6 +16,16 @@ def main():
     parser.add_argument("--line", type=int, default=1, help="Line instance to use for keypad/softkeys")
     parser.add_argument("--config", action="store_true", help="Load connection details from examples/cli.config")
     parser.add_argument("--skip_tftp", action="store_true", help="Skip TFTP file download")
+    parser.add_argument(
+        "--rtp-loopback",
+        action="store_true",
+        help="Echo received RTP back to the remote party (for media troubleshooting)",
+    )
+    parser.add_argument(
+        "--rtp-loopback-monitor",
+        action="store_true",
+        help="With --rtp-loopback, also play received RTP on the local speaker",
+    )
     parser.add_argument("-v", "--verbose", action="count", default=0,
                         help="Increase output verbosity (-v = warning, -vv = message, -vvv = info, -vvvv = debug)")
     args = parser.parse_args()

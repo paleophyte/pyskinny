@@ -6,9 +6,53 @@ from messages.generic import STIMULUS_NAMES, TONE_NAMES, TONE_OUTPUT_DIRECTION_N
 from utils.call_management import CALL_STATE_NAMES
 from utils.call_management import update_call_state, mark_call_ended, mark_call_connected, next_synthetic_call_reference
 from utils.client import get_local_ip, ip_to_int, _keypad_code_to_char
-from audio_worker import RTPReceiver, RTPSender, socket
+from audio_worker import RTPReceiver, RTPSender, wire_rtp_loopback, socket
 import logging
 logger = logging.getLogger(__name__)
+
+
+def _rtp_loopback_enabled(client) -> bool:
+    kv = client.state.kv_dict.get("rtp_loopback")
+    if kv is not None:
+        return str(kv).lower() in ("1", "true", "yes", "on")
+    return bool(getattr(client.state, "rtp_loopback", False))
+
+
+def _rtp_loopback_monitor(client) -> bool:
+    kv = client.state.kv_dict.get("rtp_loopback_monitor")
+    if kv is not None:
+        return str(kv).lower() in ("1", "true", "yes", "on")
+    return bool(getattr(client.state, "rtp_loopback_monitor", False))
+
+
+def _rtp_play_worker(client):
+    if not client.state.enable_audio:
+        return None
+    if _rtp_loopback_enabled(client) and not _rtp_loopback_monitor(client):
+        return None
+    return client.audio
+
+
+def _configure_rtp_sender(client, tx: RTPSender) -> None:
+    if _rtp_loopback_enabled(client):
+        rx = client.state._rtp_rx
+        if rx is None:
+            logger.warning("rtp_loopback enabled but OpenReceiveChannel/RTP RX not ready yet")
+            tx.send_silence()
+            return
+        client.state._rtp_echo_source = wire_rtp_loopback(rx, tx, sr=tx.sr)
+        logger.info("[RTP] loopback echo enabled -> %s:%s", tx.addr[0], tx.addr[1])
+        return
+
+    play_mode = client.state.kv_dict.get("audio_play_mode", "silent")
+    if play_mode in ["silent", "silence"]:
+        logger.debug("RTP Sending mode: Silence")
+    elif play_mode in ["mic", "microphone"]:
+        logger.debug("RTP Sending mode: Microphone")
+        tx.send_microphone()
+    else:
+        logger.debug(f"RTP Sending mode: File {play_mode}")
+        tx.send_wav(play_mode, loop=True)
 
 
 @register_handler(0x0085, "SetRinger")
@@ -524,17 +568,7 @@ def parse_start_media_transmission(client, payload):
         log=client.logger,
     )
     tx.start()
-
-    play_mode = client.state.kv_dict.get("audio_play_mode", "silent")
-
-    if play_mode in ["silent", "silence"]:
-        logger.debug("RTP Sending mode: Silence")
-    elif play_mode in ["mic", "microphone"]:
-        logger.debug("RTP Sending mode: Microphone")
-        tx.send_microphone()
-    else:
-        logger.debug(f"RTP Sending mode: File {play_mode}")
-        tx.send_wav(play_mode, loop=True)
+    _configure_rtp_sender(client, tx)
 
     client.state._rtp_tx = tx
 
@@ -564,6 +598,11 @@ def parse_stop_media_transmission(client, payload):
     tx = client.state._rtp_tx or None
     if tx:
         tx.stop()
+    client.state._rtp_tx = None
+    rx = client.state._rtp_rx or None
+    if rx:
+        rx.detach_echo()
+    client.state._rtp_echo_source = None
 
     client.state.media_active = False
     client.events.media_started.clear()
@@ -674,53 +713,18 @@ def parse_open_receive_channel(client, payload):
 @register_handler(0x0034, "OpenReceiveChannelAck")
 def send_open_receive_channel_ack(client, payload):
     media_reception_status = 0  # 0 = OK
-    # loopback_config = client.state.get("loopback", {})
-    # mode = loopback_config.get("mode", "play")  # default to play
-    # loopback_enabled = loopback_config.get("enabled", False)
-    # port_number = 0
 
-    rx = RTPReceiver(worker=client.audio, bind_ip="0.0.0.0", source_id="rx", log=client.logger)
+    rx = RTPReceiver(
+        worker=_rtp_play_worker(client),
+        bind_ip="0.0.0.0",
+        source_id="rx",
+        log=client.logger,
+    )
     rx.start()
     client.state._rtp_rx = rx
     port_number = rx.port
 
-    # player = RTPAudioPlayer()
-    # player.start()
-    # port_number = player.port
-    # client.state["rtp_player"] = player
-    # client.state["rtp_socket"] = player.sock
-    # client.state["rtp_port_number"] = port_number
-
-    # # Default playback
-    # player = None
-    # if loopback_enabled and mode in ("play", "both"):
-    #     player = RTPAudioPlayer(log=log)
-    #     player.start()
-    #     log(f"[Audio] RTP player started in mode: {mode}")
-    #     port_number = player.port
-    #     shared_state["rtp_player"] = player
-    #     shared_state["rtp_socket"] = player.sock
-    #     shared_state["rtp_port_number"] = port_number
-    #
-    # # Setup for loopback echo
-    # echo = None
-    # if loopback_enabled and mode in ("loopback", "both"):
-    #     log("loopback mode requested")
-    #     remote_ip = shared_state.get("rtp_remote_ip")
-    #     remote_port = shared_state.get("rtp_remote_port")
-    #     if remote_ip and remote_port:
-    #         echo = RTPLoopbackEcho(remote_ip=remote_ip, remote_port=remote_port, log=log)
-    #         echo.start()
-    #         log(f"[Audio] RTP loopback started in mode: {mode}")
-    #         port_number = echo.local_port
-    #         shared_state["rtp_echo_player"] = echo
-    #         shared_state["rtp_echo_socket"] = echo.sock
-    #         shared_state["rtp_echo_port_number"] = port_number
-    #     else:
-    #         log("no port info")
-
     call_manager_host_ip = get_local_ip(client.state.server)
-
     station_ip = ip_to_int(call_manager_host_ip)  # still in int form
     pass_through_party_id = payload["passThroughPartyId"]
     call_reference = payload["callReference"]
@@ -760,43 +764,11 @@ def parse_close_receive_channel(client, payload):
 
     # Close/clear RTP Receiver
     rx = client.state._rtp_rx or None
-    if rx: rx.stop()
+    if rx:
+        rx.stop()
+    client.state._rtp_rx = None
+    client.state._rtp_echo_source = None
 
-    # player = client.state.get("rtp_player")
-    # if player:
-    #     player.stop()
-    #     client.state["rtp_player"] = None
-    #     client.state["rtp_socket"] = None
-    #     client.state["rtp_port_number"] = None
-    #
-    # echo = client.state.get("rtp_echo_player")
-    # if echo:
-    #     echo.stop()
-    #     client.state["rtp_echo_player"] = None
-    #     client.state["rtp_echo_socket"] = None
-    #     client.state["rtp_echo_port_number"] = None
-    #
-    # # Close/clear RTP Sender
-    # sender = client.state.get("rtp_sender")
-    # if sender:
-    #     sender.stop()
-    #     client.state["rtp_sender"] = None
-
-    # trace_data = {
-    #     "conferenceId": conference_id,
-    #     "passThroughPartyId": pass_through_party_id,
-    #     "callReference": call_reference,
-    # }
-
-    # # Track call lifecycle
-    # call_state_name = "OnHook"
-    # handle_call_state(conference_id, call_reference, call_state_name, shared_state)
-    # Call Trace Logging
-    # message_info = get_current_message_info(message_table)
-    # # trace = shared_state.get("trace", print)
-    # trace(call_reference, message_info, shared_state, line_instance=None, log=log, override_message_data=trace_data)
-
-    # logger.info(f"[RECV] CloseReceiveChannel conferenceId: {conference_id}, passThroughPartyId: {pass_through_party_id}, callReference: {call_reference}")
     logger.info(f"[RECV] CloseReceiveChannel")
 
 

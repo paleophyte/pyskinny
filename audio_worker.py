@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import wave, threading, numpy as np
 import sounddevice as sd
 import queue
@@ -537,11 +539,13 @@ class RTPReceiver:
     """
     Minimal RTP receiver -> float32 mono -> AudioWorker.feed_stream().
     Supports PT=0 (PCMU μ-law) and PT=8 (PCMA A-law).
+    Optional echo_source receives decoded PCM for RTP loopback.
     """
     def __init__(self, worker, bind_ip="0.0.0.0", port=0, source_id="rx", log=None):
         self.worker = worker
         self.source_id = source_id
         self.log = log
+        self.echo_source: EchoSource | None = None
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((bind_ip, port))
         self.sock.settimeout(0.5)
@@ -549,16 +553,24 @@ class RTPReceiver:
         self._stop = threading.Event()
         self._thr = threading.Thread(target=self._run, name=f"RTPReceiver:{self.port}", daemon=True)
 
+    def attach_echo(self, echo_source: EchoSource) -> None:
+        self.echo_source = echo_source
+
+    def detach_echo(self) -> None:
+        self.echo_source = None
+
     def start(self):
-        # ensure stream exists in worker
-        self.worker.add_stream(self.source_id, gain_db=0.0)
+        if self.worker is not None:
+            self.worker.add_stream(self.source_id, gain_db=0.0)
         self._thr.start()
 
     def stop(self):
         self._stop.set()
         try: self.sock.close()
         except Exception: pass
-        self.worker.remove_stream(self.source_id)
+        if self.worker is not None:
+            self.worker.remove_stream(self.source_id)
+        self.echo_source = None
 
     def _decode_payload(self, pt: int, payload: bytes) -> np.ndarray:
         if pt == 0:   # PCMU
@@ -590,8 +602,11 @@ class RTPReceiver:
             payload = data[header_len:]
             pcm = self._decode_payload(pt, payload)
             if pcm.size:
-                # RTP telephony is 8kHz typically
-                self.worker.feed_stream(self.source_id, pcm, src_rate=8000)
+                echo = self.echo_source
+                if echo is not None:
+                    echo.push(pcm)
+                if self.worker is not None:
+                    self.worker.feed_stream(self.source_id, pcm, src_rate=8000)
 
 
 class _BaseSource:
@@ -649,6 +664,44 @@ class WavSource(_BaseSource):
                 out[:take] = self.buf[pos : pos + take]
                 self.pos = pos + take
         return self.gain * out
+
+class EchoSource(_BaseSource):
+    """PCM queue fed by RTPReceiver for loopback echo via RTPSender."""
+
+    MAX_QUEUE_MS = 400
+
+    def __init__(self, sr: int):
+        self.sr = sr
+        self._buf: deque = deque()
+        self._lock = threading.Lock()
+
+    def push(self, pcm: np.ndarray) -> None:
+        if pcm.size == 0:
+            return
+        chunk = pcm.astype(np.float32, copy=False)
+        with self._lock:
+            self._buf.append(chunk)
+            total = sum(arr.size for arr in self._buf)
+            max_samples = int(self.sr * self.MAX_QUEUE_MS / 1000)
+            while total > max_samples and self._buf:
+                dropped = self._buf.popleft()
+                total -= dropped.size
+
+    def read(self, n: int) -> np.ndarray:
+        out = np.zeros(n, dtype=np.float32)
+        with self._lock:
+            i = 0
+            while i < n and self._buf:
+                chunk = self._buf[0]
+                take = min(n - i, chunk.size)
+                out[i : i + take] = chunk[:take]
+                if take == chunk.size:
+                    self._buf.popleft()
+                else:
+                    self._buf[0] = chunk[take:]
+                i += take
+        return out
+
 
 class MicSource(_BaseSource):
     """Capture mono float32 at target_sr into a small deque buffer."""
@@ -816,6 +869,9 @@ class RTPSender:
         src = MicSource(target_sr=self.sr, device=device, blocksize=blocksize)
         self._swap_source(src)
 
+    def send_echo(self, echo_source: EchoSource):
+        self._swap_source(echo_source)
+
     def _swap_source(self, new_src: _BaseSource):
         with self._src_lock:
             old = self._source
@@ -897,3 +953,11 @@ class RTPSender:
             else:
                 # fell behind; catch up
                 next_send = time.perf_counter()
+
+
+def wire_rtp_loopback(rx: RTPReceiver, tx: RTPSender, *, sr: int = 8000) -> EchoSource:
+    """Connect an RTP receiver to an RTP sender for echo-back troubleshooting."""
+    echo = EchoSource(sr)
+    rx.attach_echo(echo)
+    tx.send_echo(echo)
+    return echo

@@ -5,7 +5,8 @@ from client import SCCPClient
 from messages.generic import handle_keypad_press, handle_button_press, DEVICE_TYPE_MAP
 from textwrap import wrap
 import logging
-from state import build_state_from_args
+from state import apply_media_options, build_state_from_args
+from config import load_config, resolve_config_path
 from utils.client import write_json_to_file
 
 
@@ -311,6 +312,8 @@ class ConsoleApp:
 
     def run(self, stdscr, args):
         state = build_state_from_args(args)
+        cfg_path = resolve_config_path(getattr(args, "config", None))
+        apply_media_options(state, args, load_config(cfg_path) if cfg_path else None)
         self.client = SCCPClient(state)
         self.client.get_tftp_config = not self.skip_tftp
 

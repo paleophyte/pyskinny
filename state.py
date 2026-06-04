@@ -143,6 +143,9 @@ class PhoneState:
         self.start_media_transmission = {}
         self._rtp_tx = None
         self._rtp_rx = None
+        self._rtp_echo_source = None
+        self.rtp_loopback = False
+        self.rtp_loopback_monitor = False
 
         # Key Value storage
         self.kv_dict = {}
@@ -337,3 +340,16 @@ def build_state_from_args(args) -> PhoneState:
         )
 
     return PhoneState(server=server, mac=mac, device_name=device, model=model)
+
+
+def apply_media_options(state: PhoneState, args, cfg: dict | None) -> None:
+    """Apply optional RTP / audio flags from CLI args or config file."""
+    if cfg:
+        if cfg.get("rtp_loopback"):
+            state.rtp_loopback = True
+        if cfg.get("rtp_loopback_monitor"):
+            state.rtp_loopback_monitor = True
+    if getattr(args, "rtp_loopback", False):
+        state.rtp_loopback = True
+    if getattr(args, "rtp_loopback_monitor", False):
+        state.rtp_loopback_monitor = True
