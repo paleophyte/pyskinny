@@ -56,6 +56,7 @@ def skinny_sim():
         tftp=True,
         tftp_port=_free_udp_port(),
         advertise_host="127.0.0.1",
+        admin_port=0,
     )
     sim.start(background=True)
     import time

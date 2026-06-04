@@ -50,6 +50,7 @@ def test_dial_ivr_auto_connects():
         dn_start=5200,
         tftp=False,
         ivr_dn="9999",
+        admin_port=0,
     )
     sim.start(background=True)
     time.sleep(0.15)
@@ -81,6 +82,7 @@ def test_dial_ivr_end_call_hangs_up():
         tftp=False,
         ivr_dn="9999",
         rtp_sim_peer="tone",
+        admin_port=0,
     )
     sim.start(background=True)
     time.sleep(0.15)
@@ -110,6 +112,7 @@ def test_dial_ivr_starts_sim_media_hub():
         tftp=False,
         ivr_dn="9999",
         rtp_sim_peer="tone",
+        admin_port=0,
     )
     sim.start(background=True)
     time.sleep(0.15)
@@ -143,6 +146,7 @@ def test_ivr_menu_keypad_loopback():
         tftp=False,
         ivr_dn="9999",
         rtp_sim_peer="tone",
+        admin_port=0,
     )
     sim.start(background=True)
     time.sleep(0.15)
@@ -190,6 +194,7 @@ def test_ivr_menu_hangup_key():
         tftp=False,
         ivr_dn="9999",
         rtp_sim_peer="tone",
+        admin_port=0,
     )
     sim.start(background=True)
     time.sleep(0.15)

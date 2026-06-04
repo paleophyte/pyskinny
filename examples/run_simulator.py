@@ -109,6 +109,18 @@ def main() -> None:
         metavar="DN",
         help="Virtual auto-answer IVR DN (e.g. 9999); single phone can dial for sim RTP tone/loopback",
     )
+    parser.add_argument(
+        "--admin-port",
+        type=int,
+        default=8090,
+        metavar="PORT",
+        help="Web admin UI port for phone tonreset/restart (0=disable, default: 8090)",
+    )
+    parser.add_argument(
+        "--no-admin",
+        action="store_true",
+        help="Disable the web admin UI (same as --admin-port 0)",
+    )
     parser.add_argument("-v", "--verbose", action="count", default=0)
     args = parser.parse_args()
 
@@ -138,6 +150,7 @@ def main() -> None:
         rtp_sim_loopback_gain_db=args.rtp_sim_loopback_gain,
         rtp_sim_loopback_preamble_sec=args.rtp_sim_loopback_preamble,
         ivr_dn=args.ivr_dn,
+        admin_port=0 if args.no_admin else args.admin_port,
     )
 
     for mac in args.provision:

@@ -359,3 +359,14 @@ class SkinnySession:
         if len(payload) < 4:
             return default
         return struct.unpack("<I", payload[:4])[0]
+
+    def disconnect(self) -> None:
+        """Force-close the Skinny TCP session (phone should re-register)."""
+        try:
+            self.conn.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            self.conn.close()
+        except OSError:
+            pass

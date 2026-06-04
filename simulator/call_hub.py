@@ -635,3 +635,72 @@ class CallHub:
             logger.info("Call ended ref=%s", call.call_ref)
             if call.ivr and self.ivr_menu:
                 self.ivr_menu.on_call_ended(call_ref)
+
+    def _normalize_device(self, device: str) -> str:
+        name = device.upper()
+        if not name.startswith("SEP"):
+            from utils.client import normalize_mac_address
+
+            name = "SEP" + normalize_mac_address(name)
+        return name
+
+    def session_for_device(self, device: str) -> SkinnySession | None:
+        name = self._normalize_device(device)
+        with self._lock:
+            return self._by_device.get(name)
+
+    def snapshot_sessions(self) -> list[dict]:
+        with self._lock:
+            rows = []
+            for device, session in sorted(self._by_device.items()):
+                call = session.active_call
+                rows.append(
+                    {
+                        "device": device,
+                        "dn": session.directory_number or "",
+                        "ip": session.addr[0],
+                        "port": session.addr[1],
+                        "legacy": session._legacy_phone,
+                        "in_call": call is not None,
+                        "call_state": call.state if call else "idle",
+                        "call_ref": call.call_ref if call else None,
+                    }
+                )
+            return rows
+
+    def ton_reset(self, device: str) -> bool:
+        session = self.session_for_device(device)
+        if not session:
+            return False
+        call = session.active_call
+        line = call.line if call else 1
+        ref = call.call_ref if call else 0
+        session.send(payloads.stop_tone(line, ref))
+        if not call:
+            session.send(payloads.display_prompt_status("Ready", line, 0))
+        logger.info(
+            "Admin tonreset %s (%s)",
+            session.device_name,
+            session.directory_number or "?",
+        )
+        return True
+
+    def restart_session(self, device: str) -> bool:
+        session = self.session_for_device(device)
+        if not session:
+            return False
+        logger.info(
+            "Admin restart %s (%s) from %s",
+            session.device_name,
+            session.directory_number or "?",
+            session.addr[0],
+        )
+        session.disconnect()
+        return True
+
+    def end_call_for_device(self, device: str) -> bool:
+        session = self.session_for_device(device)
+        if not session or not session.active_call:
+            return False
+        self.end_call(source=session)
+        return True

@@ -12,6 +12,7 @@ from simulator.registry import DeviceRegistry
 from simulator.session import SkinnySession
 from simulator.tftp_service import TftpConfigService, resolve_advertise_host
 from simulator.cip_http import start_cip_http
+from simulator.admin_http import start_admin_http
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class SkinnySimulator:
         rtp_sim_loopback_gain_db: float = 12.0,
         rtp_sim_loopback_preamble_sec: float = 2.0,
         ivr_dn: str | None = None,
+        admin_port: int = 8090,
     ):
         self.host = host
         self.port = port
@@ -75,7 +77,9 @@ class SkinnySimulator:
         self._stop = threading.Event()
         self.tftp: TftpConfigService | None = None
         self._cip_http = None
+        self._admin_http = None
         self.cip_port = cip_port
+        self.admin_port = admin_port
 
         if tftp:
             cm_host = resolve_advertise_host(host, advertise_host)
@@ -155,6 +159,18 @@ class SkinnySimulator:
                 self.tftp.cm_host,
                 self.cip_port,
             )
+        if self.admin_port:
+            admin_host = self.tftp.cm_host if self.tftp else resolve_advertise_host(self.host, None)
+            self._admin_http = start_admin_http(
+                self.host,
+                self.admin_port,
+                hub=self.hub,
+                registry=self.registry,
+                tftp=self.tftp,
+                provision=self.provision if self.tftp else None,
+                server_name=self.server_name,
+            )
+            logger.info("Simulator admin UI http://%s:%s/", admin_host, self.admin_port)
         if background:
             self._thread = threading.Thread(target=self._serve_forever, name="skinny-sim", daemon=True)
             self._thread.start()
@@ -167,6 +183,9 @@ class SkinnySimulator:
             self._media_hub.stop_all()
         if self.tftp:
             self.tftp.stop()
+        if self._admin_http:
+            self._admin_http.shutdown()
+            self._admin_http.server_close()
         if self._sock:
             try:
                 self._sock.close()

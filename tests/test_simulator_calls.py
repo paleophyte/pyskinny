@@ -29,6 +29,7 @@ def sim_server():
         port=0,
         dn_start=5000,
         tftp=False,
+        admin_port=0,
     )
     sim.start(background=True)
     time.sleep(0.15)
@@ -130,6 +131,7 @@ def test_simulator_auto_answer_connects_without_manual_answer():
         dn_start=5100,
         tftp=False,
         auto_answer=["AABBCCDDEE12"],
+        admin_port=0,
     )
     sim.start(background=True)
     time.sleep(0.15)
