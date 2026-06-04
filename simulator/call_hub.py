@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from simulator import payloads
+from simulator.ivr_menu import IvrMenu
 from simulator.media_hub import SimMediaHub
 
 if TYPE_CHECKING:
@@ -48,6 +49,7 @@ class SimCall:
     state: str = "idle"
     ivr: bool = False
     media_ports: dict = field(default_factory=dict)
+    ivr_menu_active: bool = False
 
 
 class CallHub:
@@ -62,6 +64,7 @@ class CallHub:
         self.auto_answer_devices: set[str] = set()
         self.media_hub = media_hub
         self.ivr_dn = str(ivr_dn) if ivr_dn else None
+        self.ivr_menu = IvrMenu() if self.ivr_dn else None
 
     def register_session(self, session: SkinnySession) -> None:
         with self._lock:
@@ -123,7 +126,14 @@ class CallHub:
 
     def on_digit(self, caller: SkinnySession, digit: str) -> None:
         call = caller.active_call
-        if not call or call.state != "dialing":
+        if not call:
+            return
+
+        if call.ivr and call.state == "connected" and call.ivr_menu_active and self.ivr_menu:
+            self.ivr_menu.on_keypad(call, digit, self)
+            return
+
+        if call.state != "dialing":
             return
 
         if digit == "#":
@@ -532,11 +542,14 @@ class CallHub:
             if session is not call.caller:
                 return
             if self.media_hub and self.media_hub.start_call(call):
+                call.ivr_menu_active = True
                 logger.info(
                     "IVR media started ref=%s via SimMediaHub (%s)",
                     call.call_ref,
                     self.media_hub.mode,
                 )
+                if self.ivr_menu:
+                    self.ivr_menu.on_media_started(call, self.media_hub)
             else:
                 logger.warning(
                     "IVR call ref=%s connected but no SimMediaHub (--rtp-sim-peer or --ivr-dn enables tone)",

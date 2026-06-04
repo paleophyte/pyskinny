@@ -55,6 +55,11 @@ class SkinnySimulator:
             media_hub = SimMediaHub(mode="tone")
         self.hub = CallHub(media_hub=media_hub, ivr_dn=self.ivr_dn)
         self._media_hub = media_hub
+        if self.ivr_dn:
+            logger.info(
+                "Virtual IVR on DN %s — keypad menu: 1=loopback 2=tone 9=hangup",
+                self.ivr_dn,
+            )
         if auto_answer:
             for target in auto_answer:
                 self.hub.set_auto_answer(target)

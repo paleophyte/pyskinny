@@ -133,3 +133,78 @@ def test_dial_ivr_starts_sim_media_hub():
         time.sleep(0.2)
         client.stop()
         sim.stop()
+
+
+def test_ivr_menu_keypad_loopback():
+    sim = SkinnySimulator(
+        host="127.0.0.1",
+        port=0,
+        dn_start=5600,
+        tftp=False,
+        ivr_dn="9999",
+        rtp_sim_peer="tone",
+    )
+    sim.start(background=True)
+    time.sleep(0.15)
+    host, port = sim.address
+
+    client, _state = _register_client(host, port, "AABBCCDDEE23")
+
+    try:
+        _dial(client, "9999")
+        assert client.events.call_connected.wait(timeout=10)
+
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            if sim._media_hub and sim._media_hub._sessions:
+                break
+            time.sleep(0.1)
+        assert sim._media_hub is not None
+        ref = client.state.active_calls_list[-1]
+        call_ref = client.numeric_call_ref(ref) or int(str(ref))
+
+        handle_keypad_press(client, 1, 1)
+        time.sleep(0.3)
+
+        session = sim._media_hub._sessions.get(call_ref)
+        assert session is not None
+        assert session.legs[0].echo is not None
+    finally:
+        client.on_hook()
+        time.sleep(0.2)
+        client.stop()
+        sim.stop()
+
+
+def test_ivr_menu_hangup_key():
+    sim = SkinnySimulator(
+        host="127.0.0.1",
+        port=0,
+        dn_start=5700,
+        tftp=False,
+        ivr_dn="9999",
+        rtp_sim_peer="tone",
+    )
+    sim.start(background=True)
+    time.sleep(0.15)
+    host, port = sim.address
+
+    client, _state = _register_client(host, port, "AABBCCDDEE24")
+
+    try:
+        _dial(client, "9999")
+        assert client.events.call_connected.wait(timeout=10)
+        client.events.call_ended.clear()
+
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            if sim._media_hub and sim._media_hub._sessions:
+                break
+            time.sleep(0.1)
+        assert sim._media_hub and sim._media_hub._sessions
+
+        handle_keypad_press(client, 1, 9)
+        assert client.events.call_ended.wait(timeout=10), "IVR 9 should hang up"
+    finally:
+        client.stop()
+        sim.stop()

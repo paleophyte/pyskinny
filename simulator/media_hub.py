@@ -128,7 +128,9 @@ class SimMediaHub:
                 )
             )
 
-            if self.mode == "tone":
+            if call.ivr:
+                self._start_ivr_tx(call, leg, tx, rx)
+            elif self.mode == "tone":
                 tx.send_tone(self.tone_hz)
             elif self.mode == "loopback":
                 echo = EchoSource(
@@ -194,6 +196,91 @@ class SimMediaHub:
             self.advertise_ip,
             [(leg.session.device_name, leg.rx.port, leg.phone_port) for leg in sim_session.legs],
         )
+        return True
+
+    def _start_ivr_tx(self, call: SimCall, leg: _PartyLeg, tx: RTPSender, rx: RTPReceiver) -> None:
+        """IVR calls: play welcome.wav if present, else fall back to hub mode."""
+        from simulator.ivr_menu import IvrMenu
+
+        welcome = IvrMenu().welcome_path()
+        if welcome:
+            tx.send_wav(str(welcome), loop=False, gain_db=-3.0)
+            logger.info("SimMediaHub IVR prompt ref=%s -> %s", call.call_ref, welcome.name)
+            return
+
+        if self.mode == "tone":
+            tx.send_tone(self.tone_hz)
+        elif self.mode == "loopback":
+            echo = EchoSource(
+                8000,
+                delay_ms=self.loopback_delay_ms,
+                gain_db=self.loopback_gain_db,
+            )
+            leg.echo = echo
+            if self.loopback_preamble_sec > 0:
+                tx.send_tone_then_echo(
+                    echo,
+                    tone_hz=self.tone_hz,
+                    preamble_sec=self.loopback_preamble_sec,
+                    tone_gain_db=-6.0,
+                )
+
+                def _arm_rx(
+                    rx=rx,
+                    echo=echo,
+                    ref=call.call_ref,
+                    delay=self.loopback_preamble_sec,
+                ) -> None:
+                    time.sleep(delay)
+                    try:
+                        rx.attach_echo(echo)
+                        logger.info(
+                            "SimMediaHub loopback RX armed ref=%s (after %.1fs tone)",
+                            ref,
+                            delay,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "SimMediaHub loopback RX arm failed ref=%s",
+                            ref,
+                        )
+
+                threading.Thread(
+                    target=_arm_rx,
+                    name=f"sim-rx-{call.call_ref}",
+                    daemon=True,
+                ).start()
+            else:
+                rx.attach_echo(echo)
+                tx.send_echo(echo)
+
+    def set_loopback(self, call_ref: int) -> bool:
+        sim_session = self._sessions.get(call_ref)
+        if not sim_session:
+            return False
+        for leg in sim_session.legs:
+            leg.rx.detach_echo()
+            echo = leg.echo or EchoSource(
+                8000,
+                delay_ms=self.loopback_delay_ms,
+                gain_db=self.loopback_gain_db,
+            )
+            leg.echo = echo
+            leg.rx.attach_echo(echo)
+            if leg.tx:
+                leg.tx.send_echo(echo)
+        logger.info("SimMediaHub loopback active ref=%s (IVR menu)", call_ref)
+        return True
+
+    def set_tone(self, call_ref: int) -> bool:
+        sim_session = self._sessions.get(call_ref)
+        if not sim_session:
+            return False
+        for leg in sim_session.legs:
+            leg.rx.detach_echo()
+            if leg.tx:
+                leg.tx.send_tone(self.tone_hz)
+        logger.info("SimMediaHub tone active ref=%s (IVR menu)", call_ref)
         return True
 
     def stop_call(self, call_ref: int) -> None:
