@@ -286,6 +286,9 @@ def wait_hold_observed(
         call = client.state.calls.get(ref, {}) or {}
         if call.get("call_state") == 8 or call.get("call_state_name") == "Hold":
             return True
+        line = str(call.get("line_instance") or "1")
+        if (getattr(client.state, "line_lamps", {}) or {}).get(line) == 4:
+            return True
         prompt = (getattr(client.state, "current_prompt", None) or "").lower()
         if "hold" in prompt:
             return True

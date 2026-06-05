@@ -198,21 +198,43 @@ def infer_resumed_on_media_start(client, *, call_reference=0, source="StartMedia
     )
 
 
-def infer_held_on_media_stop(client, *, call_reference=0, source="StopMediaTransmission") -> None:
-    """CM2 often omits CallState Hold; treat media stop on a connected call as hold."""
-    key, call = resolve_active_call_key(client, call_reference)
-    if not key or not call:
+def resolve_call_key_for_line(client, line_instance: int) -> tuple[str | None, dict]:
+    """Active call on a line instance (CM2 button phones)."""
+    line = int(line_instance or 0)
+    if not line:
+        return None, {}
+    for candidate in (
+        getattr(client.state, "selected_call_reference", None),
+        *(reversed(client.state.active_calls_list or [])),
+    ):
+        if not candidate:
+            continue
+        key = str(candidate)
+        call = client.state.calls.get(key, {})
+        if call and int(call.get("line_instance") or 0) == line:
+            return key, call
+    return None, {}
+
+
+def apply_line_lamp_state(
+    client,
+    line_instance: int,
+    lamp_mode: int,
+    *,
+    source: str = "SetLamp",
+) -> None:
+    """CM2 hold/resume/hangup often signaled via line lamp, not CallState (vphone_hold_unhold.pcap)."""
+    key, call = resolve_call_key_for_line(client, line_instance)
+    if not key or key not in (client.state.active_calls_list or []):
         return
-    if key not in (client.state.active_calls_list or []):
-        return
-    if call.get("call_state") not in (5,):
-        return
-    mark_call_held(
-        client,
-        call.get("call_reference") or key,
-        line_instance=int(call.get("line_instance") or 1),
-        source=source,
-    )
+    ref = call.get("call_reference") or key
+    state = call.get("call_state")
+    if lamp_mode == 4 and state == 5:
+        mark_call_held(client, ref, line_instance=line_instance, source=source)
+    elif lamp_mode in (2, 3) and state == 8:
+        mark_call_connected(client, ref, line_instance=line_instance, source=source)
+    elif lamp_mode == 1 and state in (5, 8):
+        mark_call_ended(client, ref, source=source)
 
 
 def mark_call_held(client, call_reference, line_instance=0, source="CallState"):
@@ -251,7 +273,9 @@ def apply_call_state_from_skinny(
 ) -> str:
     """Apply Skinny CallState (0x0111) to per-call and aggregate tracking."""
     if call_state in (0, 2):
-        mark_call_ended(client, call_reference, source=source)
+        key, call = resolve_active_call_key(client, call_reference)
+        end_ref = (call.get("call_reference") if call else None) or key or call_reference
+        mark_call_ended(client, end_ref, source=source)
     elif call_state in (3, 4):
         mark_call_ringing(
             client,
@@ -303,7 +327,8 @@ def mark_call_ended(client, call_reference=None, source="inferred"):
     keys = []
 
     if call_reference:
-        keys = [str(call_reference)]
+        key, _call = resolve_active_call_key(client, call_reference)
+        keys = [key] if key else [str(call_reference)]
     else:
         keys = list(client.state.active_calls_list or [])
 

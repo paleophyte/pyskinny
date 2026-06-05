@@ -27,7 +27,7 @@ Compare with softkey phones: `python -m utils.dump_softkeys` and [lab-softkey-ho
 
 ## Hold in code
 
-`SCCPClient.press_hold()` sends **Stimulus(3, line)** when `uses_physical_buttons()` is true. CM2 often omits `CallState` Hold; pyskinny infers hold from `StopMediaTransmission` while the call stays active (so console/CLI show **Hold**).
+`SCCPClient.press_hold()` sends **Stimulus(3, line)** when `uses_physical_buttons()` is true. CM2 often omits `CallState` Hold/OnHook; pyskinny tracks **SetLamp** on the line (mode 4 = hold, mode 1 = idle/end) so console/CLI stay in sync when the virtual phone hangs up.
 
 ```powershell
 $env:PYSKINNY_INTEGRATION_LABS = "cm2"

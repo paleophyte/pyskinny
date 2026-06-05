@@ -5,7 +5,7 @@ from messages.generic import STIMULUS_NAMES, TONE_NAMES, TONE_OUTPUT_DIRECTION_N
 from utils.call_management import (
     CALL_STATE_NAMES,
     apply_call_state_from_skinny,
-    infer_held_on_media_stop,
+    apply_line_lamp_state,
     infer_resumed_on_media_start,
     mark_call_ended,
     mark_call_connected,
@@ -304,6 +304,7 @@ def parse_set_lamp(client, payload):
         client.state.line_lamps = {}
     if stimulus == 9:
         client.state.line_lamps[str(stimulus_instance)] = lamp_mode
+        apply_line_lamp_state(client, stimulus_instance, lamp_mode, source="SetLamp")
 
     # logging.info(f"[RECV] SetLamp stimulus: {stimulus_name} ({stimulus}), stimulusInstance: {stimulus_instance}, lampMode: {lamp_mode}")
     logger.info(f"[RECV] SetLamp")
@@ -789,12 +790,6 @@ def parse_stop_media_transmission(client, payload):
     #     call_reference=call_reference or None,
     #     source="StopMediaTransmission",
     # )
-
-    infer_held_on_media_stop(
-        client,
-        call_reference=call_reference or pass_through_party_id,
-        source="StopMediaTransmission",
-    )
 
     logger.info(
         f"[RECV] StopMediaTransmission "
