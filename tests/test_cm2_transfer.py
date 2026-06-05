@@ -35,6 +35,30 @@ def test_keypad_press_never_packs_synthetic_ref(mock_send):
     assert wire_ref == 16777225
 
 
+def test_wait_new_call_connected_when_peer_answers():
+    state_a = PhoneState(server="10.0.0.11", device_name="pyskinny01", model="Virtual30SPplus")
+    state_c = PhoneState(server="10.0.0.11", device_name="pyskinny03", model="Virtual30SPplus")
+    client_a = SCCPClient(state_a)
+    client_c = SCCPClient(state_c)
+    mark_call_connected(client_a, "cm2-1", line_instance=1)
+    mark_call_connected(client_c, "cm2-9", line_instance=1)
+    client_c.events.call_connected.set()
+    assert client_a._wait_new_call_connected(
+        ["cm2-1"], timeout=0.5, peer_client=client_c
+    )
+
+
+def test_select_consult_call_key_prefers_new_ref():
+    state = PhoneState(server="10.0.0.11", device_name="pyskinny01", model="Virtual30SPplus")
+    client = SCCPClient(state)
+    mark_call_connected(client, "cm2-1", line_instance=1)
+    mark_call_connected(client, "cm2-2", line_instance=1)
+    client.state.calls["cm2-1"]["call_state"] = 8
+    client.state.calls["cm2-1"]["call_state_name"] = "Hold"
+    key = client._select_consult_call_key(["cm2-1"])
+    assert key == "cm2-2"
+
+
 @patch("client.handle_button_press")
 def test_press_transfer_on_button_phone_uses_stimulus_four(mock_stimulus):
     state = PhoneState(server="10.0.0.11", device_name="pyskinny01", model="Virtual30SPplus")

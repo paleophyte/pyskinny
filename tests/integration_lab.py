@@ -309,12 +309,22 @@ def run_consulted_transfer(
     transferor.events.call_connected.clear()
 
     def _answer_target() -> None:
-        if target.events.call_ringing.wait(timeout=ring_timeout):
-            answer_call(target)
+        deadline = time.time() + ring_timeout
+        while time.time() < deadline:
+            if target.events.call_ringing.wait(timeout=0.25):
+                answer_call(target)
+                return
+            if target.events.call_connected.is_set() or target.state.media_active:
+                return
 
     answer_thread = threading.Thread(target=_answer_target, daemon=True, name="consult-answer")
     answer_thread.start()
-    transferor.consulted_transfer(dn_target, pause=pause, consult_timeout=consult_timeout)
+    transferor.consulted_transfer(
+        dn_target,
+        pause=pause,
+        consult_timeout=consult_timeout,
+        peer_client=target,
+    )
     answer_thread.join(timeout=ring_timeout + 10.0)
 
     cleared = wait_call_cleared(transferor, timeout=clear_timeout)

@@ -556,8 +556,25 @@ class SCCPClient:
         else:
             self.press_line_button(line)
 
-    def _wait_new_call_connected(self, refs_before, timeout: float) -> bool:
-        """Wait until a call ref not in *refs_before* reaches Connected (state 5)."""
+    def _peer_call_connected(self, peer) -> bool:
+        """True when consult/transfer target has an active connected call."""
+        if peer is None:
+            return False
+        if getattr(peer.state, "media_active", False):
+            return True
+        if peer.events.call_connected.is_set():
+            return True
+        refs = peer.state.active_calls_list or []
+        if refs:
+            call = peer.state.calls.get(str(refs[-1]), {})
+            if call.get("call_state") == 5 or call.get("call_state_name") == "Connected":
+                return True
+        return False
+
+    def _wait_new_call_connected(
+        self, refs_before, timeout: float, *, peer_client=None
+    ) -> bool:
+        """Wait until consult leg connects (new ref, or CM2 re-use + peer answered)."""
         import time
 
         before = {str(r) for r in (refs_before or [])}
@@ -567,14 +584,48 @@ class SCCPClient:
                 sk = str(key)
                 if sk in before:
                     continue
-                if self.state.calls.get(sk, {}).get("call_state") == 5:
+                call = self.state.calls.get(sk, {})
+                if call.get("call_state") == 5:
                     return True
+
+            if self._peer_call_connected(peer_client):
+                return True
+
+            for key in self.state.active_calls_list or []:
+                sk = str(key)
+                if sk in before:
+                    continue
+                call = self.state.calls.get(sk, {})
+                if call.get("call_state") in (3, 4, 5, 12):
+                    return True
+
             if self.events.call_connected.wait(timeout=0.05):
+                if self._peer_call_connected(peer_client):
+                    return True
                 for key in self.state.active_calls_list or []:
                     sk = str(key)
-                    if sk not in before and self.state.calls.get(sk, {}).get("call_state") == 5:
+                    if sk not in before:
                         return True
+            time.sleep(0.05)
         return False
+
+    def _select_consult_call_key(self, refs_before) -> str | None:
+        """Pick the consult leg before completing transfer (prefer new connected ref)."""
+        before = {str(r) for r in (refs_before or [])}
+        for key in reversed(self.state.active_calls_list or []):
+            sk = str(key)
+            call = self.state.calls.get(sk, {})
+            if call.get("call_state") != 5:
+                continue
+            if sk not in before:
+                return sk
+        for key in reversed(self.state.active_calls_list or []):
+            sk = str(key)
+            call = self.state.calls.get(sk, {})
+            if call.get("call_state") == 5:
+                return sk
+        selected = getattr(self.state, "selected_call_reference", None)
+        return str(selected) if selected else None
 
     def blind_transfer(self, number: str, *, pause: float = 0.3) -> None:
         """Blind transfer active call: Transfer -> dial -> Transfer."""
@@ -602,6 +653,7 @@ class SCCPClient:
         *,
         pause: float = 0.3,
         consult_timeout: float = 30.0,
+        peer_client=None,
     ) -> None:
         """Consulted transfer: Transfer -> dial -> wait for answer -> Transfer."""
         import time
@@ -621,14 +673,15 @@ class SCCPClient:
                 continue
             handle_keypad_press(self, 1, code)
             time.sleep(0.05)
-        if not self._wait_new_call_connected(refs_before, consult_timeout):
+        if not self._wait_new_call_connected(
+            refs_before, consult_timeout, peer_client=peer_client
+        ):
             self.logger.warning("Consult transfer: consult party did not connect in time")
             return
         time.sleep(pause)
-        found = self._call_ref_for_state(5)
-        if found:
-            _line, ref = found
-            self.state.selected_call_reference = str(ref)
+        consult_key = self._select_consult_call_key(refs_before)
+        if consult_key:
+            self.state.selected_call_reference = consult_key
         self.press_softkey("Transfer")
 
     def conference(
@@ -660,10 +713,9 @@ class SCCPClient:
             self.logger.warning("Conference: third party did not connect in time")
             return
         time.sleep(pause)
-        found = self._call_ref_for_state(5)
-        if found:
-            _line, ref = found
-            self.state.selected_call_reference = str(ref)
+        consult_key = self._select_consult_call_key(refs_before)
+        if consult_key:
+            self.state.selected_call_reference = consult_key
         self.press_softkey("Confrn")
 
     def press_stimulus(self, button_type, instance):

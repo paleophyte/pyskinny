@@ -38,3 +38,4 @@ def test_run_consulted_transfer_skips_when_transferor_stays_active(mock_thread, 
 
     assert "consulted transfer did not complete" in str(exc.value).split("\n")[0]
     transferor.consulted_transfer.assert_called_once()
+    assert transferor.consulted_transfer.call_args.kwargs.get("peer_client") is target
