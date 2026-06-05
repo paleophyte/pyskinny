@@ -783,6 +783,23 @@ class EchoSource(_BaseSource):
         return out
 
 
+def _resolve_input_device(device=None):
+    """Return a valid PortAudio input device index, or None if unavailable."""
+    import sounddevice as sd
+
+    if device is not None:
+        try:
+            idx = int(device)
+        except (TypeError, ValueError):
+            return None
+        return idx if idx >= 0 else None
+    try:
+        idx = int(sd.default.device[0])
+    except Exception:
+        return None
+    return idx if idx >= 0 else None
+
+
 class MicSource(_BaseSource):
     """Capture mono float32 at target_sr into a small deque buffer."""
     def __init__(self, target_sr: int, device=None, blocksize: int = None):
@@ -795,9 +812,14 @@ class MicSource(_BaseSource):
         self._stopped = True
 
     def start(self):
-        if self._stream is not None: return
-        # Import here to avoid requiring sounddevice unless needed
+        if self._stream is not None:
+            return
         import sounddevice as sd
+
+        device = _resolve_input_device(self.device)
+        if device is None:
+            raise RuntimeError("no PortAudio input device (use --rtp-tone or silence TX)")
+
         self._stopped = False
 
         def cb(indata, frames, time_info, status):
@@ -821,7 +843,7 @@ class MicSource(_BaseSource):
             samplerate=self.sr,
             channels=1,
             dtype='float32',
-            device=self.device,
+            device=device,
             blocksize=self.blocksize,
             callback=cb,
         )
@@ -967,7 +989,13 @@ class RTPSender:
         self._swap_source(WavSource(path, target_sr=self.sr, loop=loop, gain_db=gain_db))
 
     def send_microphone(self, device=None):
-        # match packet blocksize to reduce jitter
+        if _resolve_input_device(device) is None:
+            if self.log:
+                self.log.warning(
+                    "[RTP TX] no microphone device; sending silence instead"
+                )
+            self.send_silence()
+            return
         blocksize = int(self.sr * self.ptime_ms / 1000)
         src = MicSource(target_sr=self.sr, device=device, blocksize=blocksize)
         self._swap_source(src)
@@ -986,10 +1014,22 @@ class RTPSender:
             old = self._source
             try:
                 new_src.start()
-            except Exception:
-                # do not lose the old source if new failed to start
-                if self.log: self.log.exception("[RTP TX] failed to start new source")
-                raise
+            except Exception as exc:
+                if self.log:
+                    if isinstance(new_src, MicSource):
+                        self.log.warning(
+                            "[RTP TX] microphone unavailable (%s); sending silence",
+                            exc,
+                        )
+                    else:
+                        self.log.warning(
+                            "[RTP TX] failed to start %s: %s",
+                            type(new_src).__name__,
+                            exc,
+                        )
+                fallback = SilenceSource(self.sr)
+                fallback.start()
+                new_src = fallback
             self._source = new_src
             # stop old after swap (avoid gap)
             try:

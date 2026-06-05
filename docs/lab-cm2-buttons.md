@@ -53,4 +53,14 @@ On Virtual30 there is no **Transfer** template button — use **Stimulus 4** (`p
 
 Console: map an F-key to transfer via CLI `phone transfer 1091` after the first Transfer, or use macro `TRANSFER 1091` on a consult path. Digit keys during transfer dial the consult number.
 
-Common log noise on CM2 (not fatal): `compression_type=160366308` RTP warnings — audio may still work. Real failures show as `[ERROR] ... Unexpected error in dispatch:` in the console log pane.
+**Blind transfer** (`blind_xfer.pcap`): Stimulus **4** → dial target (e.g. `1091`) → Stimulus **4** again → optional OnHook.
+
+### Audio / console errors
+
+Default `run_console` TX is **silence** (hear remote party via RX monitor). Use `--rtp-mic` only if you have a working microphone. Without it, PortAudio `device -1` errors came from the old default mic TX mode.
+
+Codec warnings (`compression_type=160366308`) are noisy but usually non-fatal.
+
+### Shutting down (`pgm_exit.pcap`)
+
+Closing the virtual phone app sends **TCP FIN** on the Skinny socket — no extra Skinny message required. pyskinny should **`UnregisterReq`** on orderly quit (`q` in console); abrupt kill may leave a stale registration until CM times out.

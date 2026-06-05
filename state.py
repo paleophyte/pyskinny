@@ -441,10 +441,10 @@ def _media_explicitly_configured(args, cfg) -> bool:
 
 def _apply_ivr_lab_media_defaults(state: PhoneState, args, cfg) -> None:
     """
-    When audio is on and no RTP flags were given, enable mic TX + local RX monitor.
+    When audio is on and no RTP flags were given, play received RTP locally (RX monitor).
 
-    Required for sim IVR loopback (press 1) without passing --rtp-mic
-    --rtp-loopback-monitor on every run_console invocation.
+    TX stays silent unless --rtp-mic / --rtp-tone is set (avoids PortAudio errors on
+    headless or mic-less Windows hosts). For sim IVR DTMF loopback use --rtp-mic.
     """
     if not state.enable_audio:
         return
@@ -452,5 +452,5 @@ def _apply_ivr_lab_media_defaults(state: PhoneState, args, cfg) -> None:
         return
     if state.kv_dict.get("audio_play_mode"):
         return
-    state.kv_dict["audio_play_mode"] = "mic"
+    state.kv_dict["audio_play_mode"] = "silent"
     state.rtp_loopback_monitor = True

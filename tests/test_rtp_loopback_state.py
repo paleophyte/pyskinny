@@ -30,7 +30,7 @@ def test_apply_media_options_ivr_lab_defaults():
     state = PhoneState(server="127.0.0.1", mac="AABBCCDDEEFF", model="7970")
     state.enable_audio = True  # exercise defaults even when pytest --no-audio is set
     apply_media_options(state, args, None)
-    assert state.kv_dict.get("audio_play_mode") == "mic"
+    assert state.kv_dict.get("audio_play_mode") == "silent"
     assert state.rtp_loopback_monitor is True
     assert state.rtp_loopback is False
 
