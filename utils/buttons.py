@@ -25,6 +25,11 @@ def button_hold_stimulus() -> int:
     return CM2_HOLD_STIMULUS
 
 
+def button_transfer_stimulus() -> int:
+    """Stimulus type for transfer on CM2 (SoftKey Transfer maps to event 4 on 79xx)."""
+    return FEATURE_STIMULUS["Transfer"]
+
+
 def button_type_name(btn_type: int) -> str:
     return BUTTON_TYPES.get(str(btn_type), f"Type {btn_type}")
 

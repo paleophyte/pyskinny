@@ -36,3 +36,21 @@ pytest tests/test_integration_live.py -k "hold and cm2" -v --no-audio
 ```
 
 If the test **skips**, CM may not be sending hold signals this client recognizes (CallState 8, hold prompt, or stopped RTP). Capture Skinny during a manual hold on a real 7910 against the same CM, or confirm hold/MOH is enabled on the line in CM administration.
+
+## Transfer (consult)
+
+On Virtual30 there is no **Transfer** template button — use **Stimulus 4** (`press_transfer()`), not the **Conference** button (type 125).
+
+**Consulted transfer** (what you described):
+
+1. Connected to party A (e.g. 1099).
+2. **Transfer** once → dial tone; original call held.
+3. Dial consult target (e.g. 1091).
+4. Answer on 1091.
+5. **Transfer** again → completes bridge (1091 ↔ 1099); you drop.
+
+**Blind transfer:** Transfer → dial → Transfer **without** waiting for answer.
+
+Console: map an F-key to transfer via CLI `phone transfer 1091` after the first Transfer, or use macro `TRANSFER 1091` on a consult path. Digit keys during transfer dial the consult number.
+
+Common log noise on CM2 (not fatal): `compression_type=160366308` RTP warnings — audio may still work. Real failures show as `[ERROR] ... Unexpected error in dispatch:` in the console log pane.

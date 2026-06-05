@@ -428,21 +428,26 @@ def clean_bytes(b: bytes) -> str:
 
 
 def handle_softkey_press(client, line_number, softkey_id, call_reference=0):
-    # if not call_reference:
-    #     call_reference = get_active_call_reference_from_db(line_number, shared_state, log=log)
+    from utils.call_management import skinny_wire_call_ref
 
-    logger.info(f"[SEND] SoftKeyEvent lineNumber={line_number} callReference={call_reference} softKeyId={softkey_id}")
-    send_skinny_message(client, 0x0026, struct.pack("<III", softkey_id, line_number, call_reference), silent=True)
+    wire_ref = skinny_wire_call_ref(client, call_reference)
+    logger.info(
+        f"[SEND] SoftKeyEvent lineNumber={line_number} callReference={wire_ref} softKeyId={softkey_id}"
+    )
+    send_skinny_message(client, 0x0026, struct.pack("<III", softkey_id, line_number, wire_ref), silent=True)
 
 
 def handle_keypad_press(client, line_number, keypad_btn, call_reference=0):
-    # call_reference = int(shared_state.get("CallInfo", {}).get(str(line_number), {}).get("callReference", "0"))
-    # call_reference = get_active_call_reference(1, shared_state, log=log)
+    from utils.call_management import skinny_wire_call_ref
 
     client.play_beep()
-
-    logger.info(f"[SEND] KeypadButton lineNumber={line_number} callReference={call_reference} keyPadBtn={keypad_btn}")
-    send_skinny_message(client, 0x0003, struct.pack("<III", int(keypad_btn), line_number, call_reference), silent=True)
+    wire_ref = skinny_wire_call_ref(client, call_reference)
+    logger.info(
+        f"[SEND] KeypadButton lineNumber={line_number} callReference={wire_ref} keyPadBtn={keypad_btn}"
+    )
+    send_skinny_message(
+        client, 0x0003, struct.pack("<III", int(keypad_btn), line_number, wire_ref), silent=True
+    )
 
 
 def handle_button_press(client, stimulus_type, line_instance):

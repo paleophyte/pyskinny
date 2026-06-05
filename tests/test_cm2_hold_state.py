@@ -56,3 +56,11 @@ def test_set_lamp_on_resumes_from_hold():
     parse_set_lamp(client, struct.pack("<III", 9, 1, 4))
     parse_set_lamp(client, struct.pack("<III", 9, 1, 2))
     assert client.state.calls["cm2-1"]["call_state"] == 5
+
+
+def test_set_lamp_off_ignored_with_multiple_calls_on_line():
+    client = _client_with_call()
+    mark_call_connected(client, "cm2-2", line_instance=1)
+    parse_set_lamp(client, struct.pack("<III", 9, 1, 1))
+    assert "cm2-1" in client.state.active_calls_list
+    assert "cm2-2" in client.state.active_calls_list

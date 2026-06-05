@@ -861,15 +861,16 @@ def parse_open_receive_channel(client, payload):
     salt = clean_bytes(salt_bytes)
 
     if not call_reference:
+        from utils.call_management import skinny_wire_call_ref
+
         raw = (
             getattr(client.state, "selected_call_reference", None)
             or getattr(client.state, "active_call_reference", None)
             or (client.state.active_calls_list[-1] if client.state.active_calls_list else 0)
         )
-        try:
-            call_reference = int(raw or 0)
-        except (TypeError, ValueError):
-            call_reference = 0
+        call_reference = skinny_wire_call_ref(client, raw)
+    if not call_reference:
+        call_reference = int(pass_through_party_id or 0)
 
     logger.info(f"[RECV] OpenReceiveChannel")
 

@@ -234,7 +234,41 @@ def apply_line_lamp_state(
     elif lamp_mode in (2, 3) and state == 8:
         mark_call_connected(client, ref, line_instance=line_instance, source=source)
     elif lamp_mode == 1 and state in (5, 8):
+        active_on_line = [
+            k
+            for k in (client.state.active_calls_list or [])
+            if int(client.state.calls.get(str(k), {}).get("line_instance") or 0)
+            == int(line_instance)
+        ]
+        if len(active_on_line) > 1:
+            return
         mark_call_ended(client, ref, source=source)
+
+
+def skinny_wire_call_ref(client, call_reference) -> int:
+    """Numeric Skinny call ref for KeypadButton / SoftKeyEvent (not cm2-N synthetic keys)."""
+    if call_reference is None or call_reference == "":
+        call_reference = 0
+    numeric = getattr(client, "numeric_call_ref", None)
+    if callable(numeric):
+        n = numeric(call_reference)
+        if n is not None:
+            return n
+    if isinstance(call_reference, int):
+        return call_reference if call_reference > 0 else 0
+    text = str(call_reference).strip()
+    if text.isdigit():
+        return int(text)
+    key, call = resolve_active_call_key(client, call_reference)
+    if call:
+        stored = call.get("call_reference")
+        if callable(numeric):
+            n = numeric(stored)
+            if n is not None:
+                return n
+        if isinstance(stored, int) and stored > 0:
+            return stored
+    return 0
 
 
 def mark_call_held(client, call_reference, line_instance=0, source="CallState"):

@@ -488,12 +488,32 @@ class SCCPClient:
 
         return resolve_softkey_event_for_label(self.state.softkey_template or {}, softkey_name)
 
+    def press_transfer(self, *, line: int | None = None) -> None:
+        """Transfer — SoftKeyEvent on LCD phones, Stimulus 4 on CM2 button phones."""
+        active_line = self._resolve_hold_line(line)
+        if self.uses_physical_buttons():
+            from utils.buttons import button_transfer_stimulus
+
+            handle_button_press(self, button_transfer_stimulus(), active_line)
+            return
+        active_line, active_call_ref = self.resolve_call_target(
+            line or active_line, 0, softkey_name="Transfer"
+        )
+        event = self._resolve_softkey_event("Transfer")
+        if event is None:
+            self.logger.warning(f"({self.state.device_name}) No such softkey Transfer")
+            return
+        handle_softkey_press(self, active_line, event, active_call_ref)
+
     def press_softkey(self, softkey_name, line=1, call_ref=0):
         if softkey_name == "Hold":
             self.press_hold(line=line)
             return
         if softkey_name == "Resume":
             self.press_resume(line=line)
+            return
+        if softkey_name == "Transfer":
+            self.press_transfer(line=line)
             return
         active_line, active_call_ref = self.resolve_call_target(
             line, call_ref, softkey_name=softkey_name
