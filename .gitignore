@@ -21,3 +21,5 @@ downloaded_configs/
 cucm/
 logs/
 simulator/tftp_assets/*
+*.pcap
+
