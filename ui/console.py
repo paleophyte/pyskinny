@@ -745,9 +745,9 @@ class ConsoleApp:
 
         call = self.client.state.calls.get(key, {})
         if call.get("call_state") == 8 or call.get("call_state_name") == "Hold":
-            self.client.press_softkey("Resume")
+            self.client.press_resume()
         else:
-            self.client.press_softkey("Hold")
+            self.client.press_hold()
 
     def _sync_selected_to_refs(self, refs):
         if not refs:

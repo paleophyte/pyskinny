@@ -434,12 +434,75 @@ class SCCPClient:
         """Press a Line button (Stimulus type 9) — off-hook / answer on button phones."""
         handle_button_press(self, 9, line_instance)
 
+    def _resolve_hold_line(self, line: int | None = None) -> int:
+        """Line instance for Hold/Resume Stimulus or softkey targeting."""
+        found = self._call_ref_for_state(5) or self._call_ref_for_state(8)
+        if found:
+            return found[0]
+        if line and line > 0:
+            return line
+        li = getattr(self.state, "active_call_line_instance", None)
+        if li:
+            return int(li)
+        key = self.state.selected_call_reference
+        if key:
+            call = self.state.calls.get(str(key), {})
+            if call.get("line_instance"):
+                return int(call["line_instance"])
+        return 1
+
+    def press_hold(self, *, line: int | None = None) -> None:
+        """Hold active call — SoftKeyEvent on LCD phones, Stimulus Hold + optional HookFlash on CM2."""
+        active_line = self._resolve_hold_line(line)
+        if self.uses_physical_buttons():
+            import time
+
+            from messages.generic import send_hook_flash, handle_button_press
+            from utils.buttons import FEATURE_STIMULUS
+
+            handle_button_press(self, FEATURE_STIMULUS["Hold"], active_line)
+            time.sleep(0.4)
+            key = str(self.state.selected_call_reference or "")
+            call = self.state.calls.get(key, {}) if key else {}
+            if call.get("call_state") == 5 and self.state.media_active:
+                send_hook_flash(self)
+            return
+        active_line, active_call_ref = self.resolve_call_target(
+            line or active_line, 0, softkey_name="Hold"
+        )
+        event = self._resolve_softkey_event("Hold")
+        if event is None:
+            self.logger.warning(f"({self.state.device_name}) No such softkey Hold")
+            return
+        handle_softkey_press(self, active_line, event, active_call_ref)
+
+    def press_resume(self, *, line: int | None = None) -> None:
+        """Resume held call — SoftKey Resume or Hold Stimulus toggle on button phones."""
+        if self.uses_physical_buttons():
+            self.press_hold(line=line)
+            return
+        active_line = self._resolve_hold_line(line)
+        active_line, active_call_ref = self.resolve_call_target(
+            line or active_line, 0, softkey_name="Resume"
+        )
+        event = self._resolve_softkey_event("Resume")
+        if event is None:
+            self.logger.warning(f"({self.state.device_name}) No such softkey Resume")
+            return
+        handle_softkey_press(self, active_line, event, active_call_ref)
+
     def _resolve_softkey_event(self, softkey_name: str) -> int | None:
         from utils.softkeys import resolve_softkey_event_for_label
 
         return resolve_softkey_event_for_label(self.state.softkey_template or {}, softkey_name)
 
     def press_softkey(self, softkey_name, line=1, call_ref=0):
+        if softkey_name == "Hold":
+            self.press_hold(line=line)
+            return
+        if softkey_name == "Resume":
+            self.press_resume(line=line)
+            return
         active_line, active_call_ref = self.resolve_call_target(
             line, call_ref, softkey_name=softkey_name
         )

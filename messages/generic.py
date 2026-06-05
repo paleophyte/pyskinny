@@ -460,6 +460,12 @@ def send_offhook(client):
     send_skinny_message(client, 0x0006, silent=True)
 
 
+def send_hook_flash(client):
+    """Hook flash — hold/resume toggle on CM2-era button phones."""
+    logger.info("[SEND] HookFlash")
+    send_skinny_message(client, 0x0008, silent=True)
+
+
 def send_onhook(client):
     logger.info(f"[SEND] OnHook")
     # Send "OnHook" message

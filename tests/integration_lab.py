@@ -272,6 +272,35 @@ def call_ref_summary(state: PhoneState) -> str:
     return f"refs={refs} kinds={kinds}"
 
 
+def wait_hold_observed(
+    client: SCCPClient,
+    call_ref: str | int,
+    *,
+    timeout: float = 12.0,
+    peer_client: SCCPClient | None = None,
+) -> bool:
+    """True when hold is visible (CallState 8, prompt, or media stopped on CM2)."""
+    ref = str(call_ref)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        call = client.state.calls.get(ref, {}) or {}
+        if call.get("call_state") == 8 or call.get("call_state_name") == "Hold":
+            return True
+        prompt = (getattr(client.state, "current_prompt", None) or "").lower()
+        if "hold" in prompt:
+            return True
+        if peer_client is not None:
+            peer_prompt = (getattr(peer_client.state, "current_prompt", None) or "").lower()
+            if "remote hold" in peer_prompt or "on hold" in peer_prompt:
+                return True
+            if not peer_client.state.media_active:
+                return True
+        if call.get("call_state") == 5 and not client.state.media_active:
+            return True
+        time.sleep(0.25)
+    return False
+
+
 def wait_call_state(
     client: SCCPClient,
     call_ref: str | int,

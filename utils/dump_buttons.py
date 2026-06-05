@@ -67,14 +67,13 @@ def main(argv: list[str] | None = None) -> int:
         print("hold/resume: use SoftKey Hold/Resume (see dump_softkeys).")
     else:
         print(
-            f"hold/resume (button phone): send Skinny Stimulus "
-            f"type {hints['hold_stimulus']} ({hints['hold_stimulus_name']!r}) "
-            f"on line instance {hints['default_line_instance']} "
-            f"(toggle on many CM2 builds)."
+            "hold/resume (button phone): HookFlash message (0x0008) — "
+            "toggle on CM2 / Virtual30 builds."
         )
+        print("  client.press_hold()   # or press_resume()")
         print(
-            f"  client.press_stimulus({hints['hold_stimulus']}, "
-            f"{hints['default_line_instance']})"
+            f"  (alternate on some docs: Stimulus type {hints['hold_stimulus']} "
+            f"{hints['hold_stimulus_name']!r} on line {hints['default_line_instance']})"
         )
         if hints["line_buttons"]:
             print("line_buttons:")

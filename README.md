@@ -601,7 +601,7 @@ Wireshark on the sim host:
 - [x] Consulted transfer (sim + client)
 - [x] Mini web UI for phone remote control / screenshots
 - [ ] CM2 CallInfo / synthetic ref hardening (when CM2 lab available)
-- [ ] CM2 hold via physical buttons (not SoftKeyEvent)
+- [x] CM2 hold client path (`press_hold`: Stimulus Hold + HookFlash fallback; see `dump_buttons`)
 - [ ] SIP phone support
 
 ---

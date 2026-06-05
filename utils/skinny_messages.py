@@ -16,6 +16,7 @@ _SKINNY_MESSAGE_NAMES: dict[int, str] = {
     0x0005: "Stimulus",
     0x0006: "OffHook",
     0x0007: "OnHook",
+    0x0008: "HookFlash",
     0x0009: "ForwardStatReq",
     0x000A: "SpeedDialStatReq",
     0x000B: "LineStatReq",
