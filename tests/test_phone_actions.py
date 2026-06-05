@@ -172,39 +172,15 @@ def test_cli_hold_sends_hold_softkey(mock_softkey):
     mock_softkey.assert_called_once_with(client, 1, 3, 16777221)
 
 
-@patch("time.sleep")
-@patch("messages.generic.send_hook_flash")
-@patch("messages.generic.handle_button_press")
-def test_press_hold_on_button_phone_sends_stimulus_hold(
-    mock_stimulus, mock_hook_flash, _sleep
-):
+@patch("client.handle_button_press")
+def test_press_hold_on_button_phone_sends_cm2_hold_stimulus(mock_stimulus):
     state = PhoneState(server="10.0.0.11", device_name="pyskinny01", model="Virtual30SPplus")
     state.enable_audio = False
     state.button_template = {"1": {"type": 9, "instance": 1, "type_name": "Line"}}
     client = SCCPClient(state)
     mark_call_connected(client, call_reference=16777221, line_instance=1)
-    client.state.selected_call_reference = "16777221"
-    client.state.media_active = True
     client.press_hold()
-    mock_stimulus.assert_called_once_with(client, 5, 1)
-    mock_hook_flash.assert_called_once_with(client)
-
-
-@patch("time.sleep")
-@patch("messages.generic.send_hook_flash")
-@patch("messages.generic.handle_button_press")
-def test_press_hold_skips_hook_flash_when_media_stops(
-    mock_stimulus, mock_hook_flash, _sleep
-):
-    state = PhoneState(server="10.0.0.11", device_name="pyskinny01", model="Virtual30SPplus")
-    state.enable_audio = False
-    state.button_template = {"1": {"type": 9, "instance": 1, "type_name": "Line"}}
-    state.media_active = False
-    client = SCCPClient(state)
-    mark_call_connected(client, call_reference=16777221, line_instance=1)
-    client.press_hold()
-    mock_stimulus.assert_called_once_with(client, 5, 1)
-    mock_hook_flash.assert_not_called()
+    mock_stimulus.assert_called_once_with(client, 3, 1)
 
 
 @patch("client.handle_softkey_press")

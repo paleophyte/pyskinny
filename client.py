@@ -452,20 +452,12 @@ class SCCPClient:
         return 1
 
     def press_hold(self, *, line: int | None = None) -> None:
-        """Hold active call — SoftKeyEvent on LCD phones, Stimulus Hold + optional HookFlash on CM2."""
+        """Hold active call — SoftKeyEvent on LCD phones, Stimulus 3 toggle on CM2 Virtual30."""
         active_line = self._resolve_hold_line(line)
         if self.uses_physical_buttons():
-            import time
+            from utils.buttons import button_hold_stimulus
 
-            from messages.generic import send_hook_flash, handle_button_press
-            from utils.buttons import FEATURE_STIMULUS
-
-            handle_button_press(self, FEATURE_STIMULUS["Hold"], active_line)
-            time.sleep(0.4)
-            key = str(self.state.selected_call_reference or "")
-            call = self.state.calls.get(key, {}) if key else {}
-            if call.get("call_state") == 5 and self.state.media_active:
-                send_hook_flash(self)
+            handle_button_press(self, button_hold_stimulus(), active_line)
             return
         active_line, active_call_ref = self.resolve_call_target(
             line or active_line, 0, softkey_name="Hold"

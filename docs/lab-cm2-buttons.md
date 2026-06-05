@@ -16,18 +16,18 @@ You should see four **Line** buttons plus feature keys (Call Park, Redial, Speed
 
 ## Hold on button phones
 
-The template usually does **not** include a dedicated Hold button. pyskinny sends **HookFlash** (Skinny message `0x0008`) via `press_hold()` / `press_resume()` — a toggle on CM2 / Virtual30 builds:
+The template usually does **not** include a dedicated Hold button. On Virtual30, the hold key sends **Stimulus type 3** on the line (toggle hold and resume). See `vphone_hold_unhold.pcap` at the repo root.
 
 ```python
-client.press_hold()
-client.press_resume()
+client.press_hold()    # Stimulus(3, line) — same packet to resume
+client.press_resume()  # alias for the same toggle
 ```
 
 Compare with softkey phones: `python -m utils.dump_softkeys` and [lab-softkey-hold.md](lab-softkey-hold.md).
 
 ## Hold in code
 
-`SCCPClient.press_hold()` / `press_resume()` send **HookFlash** when `uses_physical_buttons()` is true. Integration accepts CallState 8, a hold prompt, stopped media, or callee “remote hold” prompt.
+`SCCPClient.press_hold()` sends **Stimulus(3, line)** when `uses_physical_buttons()` is true. CM2 often omits `CallState` Hold; pyskinny infers hold from `StopMediaTransmission` while the call stays active (so console/CLI show **Hold**).
 
 ```powershell
 $env:PYSKINNY_INTEGRATION_LABS = "cm2"

@@ -35,5 +35,5 @@ def test_cm2_hold_hint_uses_stimulus_five():
     _load_cm2_template(state)
     hints = hold_resume_hints(state)
     assert hints["uses_buttons"] is True
-    assert hints["hold_stimulus"] == 5
+    assert hints["hold_stimulus"] == 3
     assert len(hints["line_buttons"]) >= 4

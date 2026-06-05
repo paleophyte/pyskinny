@@ -154,6 +154,67 @@ def mark_call_connected(client, call_reference, line_instance=0, source="inferre
     return key
 
 
+def resolve_active_call_key(client, call_reference=0) -> tuple[str | None, dict]:
+    """Map a Skinny call ref (numeric or synthetic) to the active calls dict key."""
+    if call_reference:
+        ref_s = str(call_reference)
+        call = client.state.calls.get(ref_s)
+        if call:
+            return ref_s, call
+        for key, row in client.state.calls.items():
+            if str(row.get("call_reference")) == ref_s:
+                return str(key), row
+
+    for candidate in (
+        getattr(client.state, "selected_call_reference", None),
+        *(reversed(client.state.active_calls_list or [])),
+    ):
+        if not candidate:
+            continue
+        key = str(candidate)
+        call = client.state.calls.get(key, {})
+        if call:
+            return key, call
+
+    active = list(client.state.active_calls_list or [])
+    if len(active) == 1:
+        key = str(active[0])
+        call = client.state.calls.get(key, {})
+        if call:
+            return key, call
+    return None, {}
+
+
+def infer_resumed_on_media_start(client, *, call_reference=0, source="StartMediaTransmission") -> None:
+    """CM2 resume often skips CallState Connected; media restart while held -> connected."""
+    key, call = resolve_active_call_key(client, call_reference)
+    if not key or call.get("call_state") != 8:
+        return
+    mark_call_connected(
+        client,
+        call.get("call_reference") or key,
+        line_instance=int(call.get("line_instance") or 1),
+        source=source,
+    )
+
+
+def infer_held_on_media_stop(client, *, call_reference=0, source="StopMediaTransmission") -> None:
+    """CM2 often omits CallState Hold; treat media stop on a connected call as hold."""
+    key, call = resolve_active_call_key(client, call_reference)
+    if not key or not call:
+        return
+    if key not in (client.state.active_calls_list or []):
+        return
+    if call.get("call_state") not in (5,):
+        return
+    mark_call_held(
+        client,
+        call.get("call_reference") or key,
+        line_instance=int(call.get("line_instance") or 1),
+        source=source,
+    )
+
+
 def mark_call_held(client, call_reference, line_instance=0, source="CallState"):
     key = update_call_state(
         client,

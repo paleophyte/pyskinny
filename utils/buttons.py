@@ -15,6 +15,15 @@ FEATURE_STIMULUS = {
     "CallPark": 126,
 }
 
+# CM2 Virtual30 hold key (tools/vphone_hold_unhold.pcap): Stimulus(3, line) toggles hold/resume.
+# Not Stimulus 5 (Hold on 79xx docs) and not HookFlash.
+CM2_HOLD_STIMULUS = 3
+
+
+def button_hold_stimulus() -> int:
+    """Stimulus type for hold/resume toggle on CM2 button-template phones."""
+    return CM2_HOLD_STIMULUS
+
 
 def button_type_name(btn_type: int) -> str:
     return BUTTON_TYPES.get(str(btn_type), f"Type {btn_type}")
@@ -75,16 +84,17 @@ def hold_resume_hints(state: PhoneState) -> dict:
     How to drive hold on button-template phones.
 
     CM2 Virtual30 templates usually have Line / Park / Redial buttons only.
-    Hold is sent as Stimulus type 5 (see STIMULUS_NAMES), not SoftKeyEvent.
+    Hold toggles via Stimulus type 3 on the line (see vphone_hold_unhold.pcap), not SoftKeyEvent.
     """
     lines = line_buttons(state)
     default_line = lines[0][1] if lines else 1
+    hold_id = CM2_HOLD_STIMULUS
     return {
         "uses_softkeys": bool(state.softkey_template),
         "uses_buttons": bool(state.button_template) and not state.softkey_template,
-        "hold_stimulus": FEATURE_STIMULUS["Hold"],
-        "hold_stimulus_name": STIMULUS_NAMES.get(FEATURE_STIMULUS["Hold"], "Hold"),
-        "resume_note": "Resume is often the same Hold stimulus (toggle) or Line + off-hook on CM2.",
+        "hold_stimulus": hold_id,
+        "hold_stimulus_name": f"Stimulus {hold_id} (Virtual30 hold toggle)",
+        "resume_note": "Resume is the same Stimulus 3 toggle on Virtual30.",
         "default_line_instance": default_line,
         "line_buttons": lines,
     }

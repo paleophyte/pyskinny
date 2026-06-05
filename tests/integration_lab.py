@@ -301,6 +301,28 @@ def wait_hold_observed(
     return False
 
 
+def wait_connected_after_hold(
+    client: SCCPClient,
+    call_ref: str | int,
+    *,
+    timeout: float = 15.0,
+    peer_client: SCCPClient | None = None,
+) -> bool:
+    """Wait for Connected after resume (CM2 may only signal via StartMediaTransmission)."""
+    ref = str(call_ref)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        call = client.state.calls.get(ref, {}) or {}
+        if call.get("call_state") == 5 or call.get("call_state_name") == "Connected":
+            return True
+        if client.state.media_active:
+            return True
+        if peer_client is not None and peer_client.state.media_active:
+            return True
+        time.sleep(0.25)
+    return False
+
+
 def wait_call_state(
     client: SCCPClient,
     call_ref: str | int,

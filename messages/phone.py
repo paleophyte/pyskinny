@@ -5,10 +5,13 @@ from messages.generic import STIMULUS_NAMES, TONE_NAMES, TONE_OUTPUT_DIRECTION_N
 from utils.call_management import (
     CALL_STATE_NAMES,
     apply_call_state_from_skinny,
+    infer_held_on_media_stop,
+    infer_resumed_on_media_start,
     mark_call_ended,
     mark_call_connected,
     mark_call_ringing,
     next_synthetic_call_reference,
+    resolve_active_call_key,
     update_call_state,
 )
 from utils.client import get_local_ip, ip_to_int, _keypad_code_to_char
@@ -291,12 +294,16 @@ def parse_set_speaker_mode(client, payload):
 @register_handler(0x0086, "SetLamp")
 def parse_set_lamp(client, payload):
     stimulus, stimulus_instance, lamp_mode = struct.unpack("<III", payload)
-    stimulus_name = STIMULUS_NAMES.get(str(stimulus), "UNKNOWN")
+    stimulus_name = STIMULUS_NAMES.get(stimulus, "UNKNOWN")
 
-    client.state.stimulus = 0
-    client.state.stimulus_name = None
-    client.state.stimulus_instance = 0
-    client.state.lamp_mode = 0
+    client.state.stimulus = stimulus
+    client.state.stimulus_name = stimulus_name
+    client.state.stimulus_instance = stimulus_instance
+    client.state.lamp_mode = lamp_mode
+    if not hasattr(client.state, "line_lamps") or client.state.line_lamps is None:
+        client.state.line_lamps = {}
+    if stimulus == 9:
+        client.state.line_lamps[str(stimulus_instance)] = lamp_mode
 
     # logging.info(f"[RECV] SetLamp stimulus: {stimulus_name} ({stimulus}), stimulusInstance: {stimulus_instance}, lampMode: {lamp_mode}")
     logger.info(f"[RECV] SetLamp")
@@ -635,7 +642,10 @@ def parse_start_media_transmission(client, payload):
     salt = clean_bytes(salt_bytes)
     # logger.info(f"[RECV] StartMediaTransmission conferenceId: {conference_id}, passThroughPartyId: {pass_through_party_id}, remoteIpAddr: {remote_ip_addr}, remotePortNumber: {remote_port_number}, milliSecondPacketSize: {milli_second_packet_size}, compressionType: {compression_type}, precedenceValue: {precedence_value}, ssValue: {ss_value}, maxFramesPerPacket: {max_frames_per_packet}, padding: {padding}, g723Bitrate: {g723_bitrate}, callReference: {call_reference}, algorithmId: {algorithm_id}, keyLen: {key_len}, saltLen: {salt_len}, key: {key}, salt: {salt}")
 
-    if not call_reference:
+    key, call = resolve_active_call_key(client, call_reference)
+    if key:
+        call_reference = call.get("call_reference") or key
+    elif not call_reference:
         call_reference = (
             getattr(client.state, "selected_call_reference", None)
             or getattr(client.state, "active_call_reference", None)
@@ -646,10 +656,16 @@ def parse_start_media_transmission(client, payload):
     client.events.media_started.set()
 
     if call_reference:
+        line_inst = int(call.get("line_instance") or getattr(client.state, "active_call_line_instance", None) or 1)
+        infer_resumed_on_media_start(
+            client,
+            call_reference=call_reference,
+            source="StartMediaTransmission",
+        )
         mark_call_connected(
             client,
             call_reference=call_reference,
-            line_instance=getattr(client.state, "active_call_line_instance", None) or 1,
+            line_instance=line_inst,
             source="StartMediaTransmission",
         )
 
@@ -774,6 +790,12 @@ def parse_stop_media_transmission(client, payload):
     #     source="StopMediaTransmission",
     # )
 
+    infer_held_on_media_stop(
+        client,
+        call_reference=call_reference or pass_through_party_id,
+        source="StopMediaTransmission",
+    )
+
     logger.info(
         f"[RECV] StopMediaTransmission "
         f"conference_id={conference_id} "
@@ -789,6 +811,12 @@ def parse_start_media_reception(client, payload):    # Wireshark dissector doesn
     conference_id = buf.read_u32(0)
     pass_through_party_id = buf.read_u32(0) if buf.remaining() >= 4 else 0
     call_reference = buf.read_u32(0) if buf.remaining() >= 4 else 0
+
+    infer_resumed_on_media_start(
+        client,
+        call_reference=call_reference or pass_through_party_id,
+        source="StartMediaReception",
+    )
 
     logger.info(
         f"[RECV] StartMediaReception "
