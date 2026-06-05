@@ -145,8 +145,92 @@ python -m utils.dump_buttons --config   # CM2
 
 ---
 
+## Your action items — captures, tests, and lab work
+
+Things only you can do in the lab. Each item points back to the backlog line(s) it unblocks.  
+Drop pcaps in repo root or `tools/` (they are gitignored — share via path name or attach to a commit if you want them in-tree).
+
+### Packet captures to grab
+
+| # | Capture | How | Unblocks (TODO lines) |
+|---|---------|-----|------------------------|
+| P1 | **cm31 registration** — pyskinny register through `TimeDateRes` | `tshark -i <iface> -f "host 10.0.0.181 and tcp port 2000" -w cm31_register.pcapng` while `pyskinny-console` registers (MAC …444, model 7960) | L31, L38–L40, L141 |
+| P2 | **cm33 registration** — same as P1 on **10.0.0.182** (7970) | `cm33_register.pcapng` | L31, L38–L40, L141 |
+| P3 | **cm31 connect call** — A calls B, answer, 5 s connected, hang up | Filter CM IP + port 2000; include **OpenReceiveChannel (0x0105)** and **StartMediaTransmission** | L33, L47, L119 |
+| P4 | **cm33 connect call** — same on cm33 | `cm33_call.pcapng` | L33, L47, L119 |
+| P5 | **FeatureStat only** — if P1/P2 are huge, a short clip from register showing **0x0034** (phone→CM) and **0x011F** (CM→phone) is enough | Note frame numbers or Skinny message list from Wireshark | L31–L32, L38–L39 |
+| P6 | **Consult transfer (softkey)** — you already have `xfer.pcap` locally; confirm it is **consult** (answer C before 2nd Transfer), not blind | Add to repo or tell us the filename if different from `blind_xfer.pcap` | L57, L144 |
+| P7 | **Conference** — A connected to B → Confrn → dial C → answer → Confrn again (3-way) | `cm41_conference.pcapng` or any lab | L55, L75 |
+| P8 | **Park** (optional) — if your CM has Call Park configured | Park + retrieve from another phone | L91 |
+| P9 | **CM2 IVR / two-way audio** (optional) — call with `--rtp-tone` or `--rtp-mic` if you care about TX on Virtual30 | `cm2_media.pcapng` (+ note if you heard remote party) | L98 |
+| P10 | **Ring / SetRinger** (optional) — inbound ring to 79xx; include lamps + ringer messages | Compare to sim `StartTone`-only path | L69 |
+
+**Existing captures we already use:** `tools/cm2_register.pcapng`, `blind_xfer.pcap`, `vphone_hold_unhold.pcap`, `pgm_exit.pcap`, `cm_cap.pcapng` (CM4.1 register), `cm_call_from_pyskinny_to_7912.pcapng`.
+
+---
+
+### Tests for you to run and report back
+
+Run with **no consoles** holding the same MAC/device names.
+
+| # | Command / action | Report | Related (TODO lines) |
+|---|----------------|--------|---------------------|
+| T1 | Full integration sweep: `pytest tests/test_integration_live.py -m integration -v --no-audio` | Pass/fail/skip count **per lab** (cm2, cm31, cm33, cm41, cm43) | L14, L56–L57 |
+| T2 | Single lab sanity after CM changes: `pytest … -m "integration and cm31"` (repeat for cm33) | Green or paste skip reason | L119–L127, L38–L40 |
+| T3 | **Conference** manual: CLI `phone conference <dn>` or macro; then say if we should automate | Works? which lab? | L55, L75 |
+| T4 | **Console hangup**: on a live call, try **F1/e** vs **Space** vs **q** | Which clears CM call cleanly on cm2 and cm41? | L73 |
+| T5 | **Multi-call**: connect → **h** hold → place second call to third DN → swap with ↑↓ → hang up each | Any stale refs in console log pane? | L74 |
+| T6 | Register with `-vvv` on **cm31** and **cm33**; search log for `Unhandled message ID` | List any **0x….** hex IDs not in our table (L29–L34) | L31, L79 |
+| T7 | `python -m utils.dump_softkeys --server 10.0.0.181 --mac 222233334444 --model 7960` | Paste whether **Hold**, **Resume**, **Transfer**, **Confrn** appear | L16, L62 |
+| T8 | After T6: same on cm2 with `dump_buttons` for pyskinny01 | Confirm button map still matches Virtual30 | L15, L134 |
+
+---
+
+### CM / device admin (one-time checks)
+
+| # | Task | Related (TODO lines) |
+|---|------|----------------------|
+| A1 | Confirm **three endpoints** per lab (…444, …445, …446) exist and DNs are routable for transfer tests | L14, L56 |
+| A2 | **Hold/MOH** enabled on lab lines (cm31–cm43 softkey; cm2 line MOH if hold test ever skips) | L38, L62 |
+| A3 | **Softkey template** on 79xx: standard 7960/7970 template with Hold/Resume/Transfer | L16, L62 |
+| A4 | Note when **license exhaustion** happens (50 devices) — which CM, after how many clients | L109 |
+| A5 | cm43: confirm **100.69.0.100** reachable from your test PC (VPN/firewall) | L122 |
+
+---
+
+### Files / logs to hand off
+
+| # | What | Related (TODO lines) |
+|---|------|----------------------|
+| F1 | Console log snippet (`-vvv`) showing **0x011F** or any **Unhandled** during cm31/cm33 **register** | L31, L38, L79 |
+| F2 | `xfer.pcap` (consult transfer) — confirm consult vs blind; we can add regression bytes | L57, L144 |
+| F3 | Output of **T1** saved to `logs/integration_all_labs.log` after a full sweep | L56 |
+| F4 | If audio matters: one **RTP** pcap (UDP) for same call as P3, or note “hear remote OK with default RX monitor” | L33, L47, L98 |
+
+---
+
+### Ops (when you have time)
+
+| # | Task | Related (TODO lines) |
+|---|------|----------------------|
+| O1 | `git push` after lab sessions if `main` is ahead of origin | L108 |
+| O2 | Optional: run GitHub **Integration (lab CallManager)** workflow on self-hosted runner after T1 passes locally | L19, L110 |
+
+---
+
+### Suggested order for you
+
+1. **T6 + F1** on cm31/cm33 (quick — confirms FeatureStat / unhandled IDs) → L31, L38–L39  
+2. **P1 + P2** (or **P5** minimal) → L40, L141  
+3. **T1** full sweep → L56  
+4. **P6 / F2** consult `xfer.pcap` → L57, L144  
+5. **T3 + P7** if you want conference in integration tests → L55, L75  
+
+---
+
 ## How to update this file
 
 - Move items to done by striking through or deleting when merged.
 - Add new rows to the message table when you see `Unhandled message ID: 0x....` in console logs (`-vvv`).
 - After a full lab sweep, note date + pass/fail counts at the top.
+- Check off **Your action items** (P/T/A/F/O) when done and note the date inline.
