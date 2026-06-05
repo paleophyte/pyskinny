@@ -410,7 +410,7 @@ def parse_time_date(client, payload):
     day_name = calendar.day_name[(w_day_of_week + 6) % 7]
 
     try:
-        dt_system = datetime.datetime.utcfromtimestamp(w_systemtime)
+        dt_system = datetime.datetime.fromtimestamp(w_systemtime, datetime.timezone.utc)
         system_time_str = dt_system.strftime("%m/%d/%Y, %A %H:%M:%S") + " UTC"
     except (OSError, ValueError):
         system_time_str = f"[Invalid Timestamp: {w_systemtime}]"
