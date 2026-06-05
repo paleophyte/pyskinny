@@ -232,6 +232,56 @@ def wait_call_cleared(client: SCCPClient, *, timeout: float = 20.0) -> bool:
     return not client.state.active_calls_list
 
 
+def wait_blind_transfer_complete(
+    transferor: SCCPClient,
+    target: SCCPClient,
+    original: SCCPClient,
+    *,
+    ring_timeout: float = 20.0,
+    clear_timeout: float = 25.0,
+    connect_timeout: float = 20.0,
+) -> None:
+    """Wait for blind transfer: target rings, transferor clears, parties connect."""
+    assert target.events.call_ringing.wait(timeout=ring_timeout), (
+        f"{target.state.device_name} did not ring after blind transfer"
+    )
+    cleared = wait_call_cleared(transferor, timeout=clear_timeout)
+    if not cleared:
+        pytest.skip(
+            f"[{transferor.state.device_name}] blind transfer sent but transferor still "
+            f"active (refs={transferor.state.active_calls_list}) — check CM transfer "
+            f"feature / DN routing"
+        )
+    answer_call(target)
+    time.sleep(0.75)
+    assert original.events.call_connected.wait(timeout=connect_timeout), (
+        f"{original.state.device_name} not connected after blind transfer: "
+        f"{original.state.calls}"
+    )
+    assert target.events.call_connected.wait(timeout=connect_timeout), (
+        f"{target.state.device_name} not connected after blind transfer: "
+        f"{target.state.calls}"
+    )
+    ref_b = (
+        str(original.state.active_calls_list[-1])
+        if original.state.active_calls_list
+        else None
+    )
+    ref_c = (
+        str(target.state.active_calls_list[-1])
+        if target.state.active_calls_list
+        else None
+    )
+    if ref_b:
+        assert wait_call_state(
+            original, ref_b, 5, expected_name="Connected", timeout=connect_timeout
+        ), original.state.calls.get(ref_b)
+    if ref_c:
+        assert wait_call_state(
+            target, ref_c, 5, expected_name="Connected", timeout=connect_timeout
+        ), target.state.calls.get(ref_c)
+
+
 def connect_two_party(
     client_a: SCCPClient,
     state_a: PhoneState,

@@ -41,6 +41,7 @@ from tests.integration_lab import (
     log_softkey_inventory,
     start_client,
     stop_client,
+    wait_blind_transfer_complete,
     wait_call_cleared,
     wait_call_state,
 )
@@ -195,8 +196,6 @@ class TestLiveCalls:
             stop_client(client_b, state_b)
 
     def test_blind_transfer(self, live_lab: LabProfile):
-        if live_lab.name == "cm2":
-            pytest.skip("CM2 blind transfer not validated yet (button-phone signaling)")
         time.sleep(2)
         endpoints = [live_lab.endpoint_a, live_lab.endpoint_b, live_lab.endpoint_c]
         if not live_lab.endpoint_c:
@@ -208,15 +207,25 @@ class TestLiveCalls:
             client_a, state_a = clients[0]
             client_b, state_b = clients[1]
             client_c, state_c = clients[2]
+            if live_lab.name == "cm2":
+                assert state_a.button_template, (
+                    f"{state_a.device_name}: expected ButtonTemplateRes on cm2"
+                )
             dn_b = line_dn(state_b)
             dn_c = line_dn(state_c)
             connect_two_party(client_a, state_a, client_b, state_b, dn_b=dn_b)
+            logger.info(
+                "[%s] blind transfer A %s -> C %s (B=%s)",
+                live_lab.name,
+                call_ref_summary(state_a),
+                dn_c,
+                dn_b,
+            )
             client_a.blind_transfer(dn_c)
-            time.sleep(2.0)
-            assert client_c.events.call_ringing.wait(timeout=20), "transfer target did not ring"
-            client_c.press_softkey("Answer")
-            assert client_c.events.call_connected.wait(timeout=20)
-            hangup(client_a)
+            wait_blind_transfer_complete(client_a, client_c, client_b)
+            hangup(client_b)
+            hangup(client_c)
+            assert wait_call_cleared(client_b) or wait_call_cleared(client_c)
         finally:
             for client, state in reversed(clients):
                 stop_client(client, state)
