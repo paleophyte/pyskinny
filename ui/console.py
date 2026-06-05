@@ -51,8 +51,11 @@ def _normalize_console_key(ch):
 
 
 class ConsoleApp:
-    def __init__(self, *, skip_tftp: bool = False):
+    def __init__(self, *, skip_tftp: bool = False, web_host: str | None = None, web_port: int | None = None):
         self.skip_tftp = skip_tftp
+        self.web_host = web_host
+        self.web_port = web_port
+        self._web_server = None
         self.client = None
         self.line = 1
         self.stop_event = threading.Event()
@@ -397,6 +400,20 @@ class ConsoleApp:
         self.client.start()
         self._refresh_actions()
 
+        if self.web_port:
+            from ui.client_web import start_client_web
+
+            host = self.web_host or "127.0.0.1"
+            self._web_server = start_client_web(
+                self.client,
+                host=host,
+                port=self.web_port,
+                line=self.line,
+                lock=self.ui_lock,
+            )
+            display = "127.0.0.1" if host == "0.0.0.0" else host
+            self.log(f"Web UI http://{display}:{self.web_port}/")
+
         try:
             last_draw = 0
             while not self.stop_event.is_set():
@@ -417,6 +434,13 @@ class ConsoleApp:
                     last_draw = now
 
         finally:
+            if self._web_server:
+                try:
+                    self._web_server.shutdown()
+                    self._web_server.server_close()
+                except Exception:
+                    pass
+                self._web_server = None
             try:
                 self._hangup_active_calls()
                 self.client.stop()

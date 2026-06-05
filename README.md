@@ -555,6 +555,15 @@ python -m examples.run_phone_web
 
 Enter the phone IP and web credentials, click **Probe** — softkeys/keypad enable when `/CGI/Execute` works even if screenshots are unavailable.
 
+**Console web UI** — control the running curses softphone in your browser (synthetic LCD, same SCCP session):
+
+```bash
+pyskinny-console --config --web-port 8766
+# open http://127.0.0.1:8766/
+```
+
+Softkeys and keypad call `SCCPClient` directly (not HTTP to a hardware phone). Use `--web-host 0.0.0.0` only on trusted lab networks.
+
 **7912 + `phone_remote`:** The embedded web server is not a normal home page on port 80. `curl http://<phone>/` often yields *empty reply* even when CGI push works. Use `phone_web_probe` to test `/CGI/Screenshot` and `/CGI/Execute`. On CUCM, `<webAccess>0</webAccess>` in `SEP*.cnf.xml` is normal when the admin “Web Access” checkbox is checked (0 = enabled, 1 = disabled). **Clear `<proxyServerURL></proxyServerURL>`** in the sim TFTP config — a proxy URL breaks local HTTP/CGI on 7912-class phones (the simulator patches this automatically). XML push auth goes to the simulator’s `authenticate.asp`, which must return plain `AUTHORIZED` (not XML).
 
 On register, the simulator log should show `legacy` for a 7912 (`type=0x7537`). New Call should log `outbound dial ... tone=33 (0x21) legacy=True` matching CUCM (`cm_cap.pcapng`: SetRinger → SetSpeakerMode → SetLamp → CallState OffHook → SelectSoftKeys → DisplayPromptStatus → ActivateCallPlane → StartTone tone 33 dir 0).

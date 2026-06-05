@@ -12,6 +12,18 @@ def main():
     add_connection_cli_args(parser)
     parser.add_argument("--line", type=int, default=1, help="Line instance to use for keypad/softkeys")
     parser.add_argument("--skip_tftp", action="store_true", help="Skip TFTP file download")
+    parser.add_argument(
+        "--web-port",
+        type=int,
+        default=None,
+        metavar="PORT",
+        help="Serve browser remote control for this console client (default port 8766 if set alone)",
+    )
+    parser.add_argument(
+        "--web-host",
+        default="127.0.0.1",
+        help="Bind address for --web-port (use 0.0.0.0 for LAN access in the lab)",
+    )
     add_media_cli_args(parser)
     parser.add_argument("-v", "--verbose", action="count", default=0,
                         help="Increase output verbosity (-v = warning, -vv = message, -vvv = info, -vvvv = debug)")
@@ -20,7 +32,11 @@ def main():
     log_level = configure_logging_from_verbose(args.verbose)
     logging.getLogger(__name__).debug("Log level set to: %s", logging.getLevelName(log_level))
 
-    app = ConsoleApp(skip_tftp=args.skip_tftp)
+    app = ConsoleApp(
+        skip_tftp=args.skip_tftp,
+        web_host=args.web_host if args.web_port else None,
+        web_port=args.web_port,
+    )
 
     # Silence stdout logging once curses UI is up (leave handlers added by ConsoleApp)
     root = logging.getLogger()
