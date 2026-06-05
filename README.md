@@ -581,6 +581,7 @@ Wireshark on the sim host:
 ## Roadmap / TODO / Ideas
 
 | **Hold / resume on live CM** | [docs/lab-softkey-hold.md](docs/lab-softkey-hold.md) |
+| **CM2 button template / hold** | [docs/lab-cm2-buttons.md](docs/lab-cm2-buttons.md) (`python -m utils.dump_buttons`) |
 
 **Done (simulator / client)**
 - [x] CallManager simulator (register, TFTP, calls between clients)
