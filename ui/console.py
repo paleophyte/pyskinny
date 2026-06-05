@@ -401,18 +401,20 @@ class ConsoleApp:
         self._refresh_actions()
 
         if self.web_port:
-            from ui.client_web import start_client_web
+            from types import SimpleNamespace
 
-            host = self.web_host or "127.0.0.1"
-            self._web_server = start_client_web(
+            from utils.cli_web import start_client_web_from_args
+
+            web_args = SimpleNamespace(web_port=self.web_port, web_host=self.web_host or "127.0.0.1")
+            self._web_server = start_client_web_from_args(
                 self.client,
-                host=host,
-                port=self.web_port,
+                web_args,
                 line=self.line,
                 lock=self.ui_lock,
             )
-            display = "127.0.0.1" if host == "0.0.0.0" else host
-            self.log(f"Web UI http://{display}:{self.web_port}/")
+            if self._web_server:
+                display = "127.0.0.1" if (self.web_host or "127.0.0.1") == "0.0.0.0" else (self.web_host or "127.0.0.1")
+                self.log(f"Web UI http://{display}:{self.web_port}/")
 
         try:
             last_draw = 0
@@ -435,11 +437,9 @@ class ConsoleApp:
 
         finally:
             if self._web_server:
-                try:
-                    self._web_server.shutdown()
-                    self._web_server.server_close()
-                except Exception:
-                    pass
+                from utils.cli_web import stop_client_web
+
+                stop_client_web(self._web_server)
                 self._web_server = None
             try:
                 self._hangup_active_calls()

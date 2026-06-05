@@ -383,6 +383,8 @@ class CLIPhone:
 
         self.client = None
         self.state = None
+        self.ui_lock = threading.Lock()
+        self._web_server = None
         self.stop_event = threading.Event()
         self._auto_answer_thread: threading.Thread | None = None
         self.enable_cdp = False
@@ -442,7 +444,27 @@ class CLIPhone:
 
         self.logger.info("Connected.")
         self._start_auto_answer_watcher()
+        self._start_web_if_configured()
         return True
+
+    def _start_web_if_configured(self) -> None:
+        if self.client is None or self.cli_args is None:
+            return
+        from utils.cli_web import start_client_web_from_args
+
+        self._stop_web()
+        self._web_server = start_client_web_from_args(
+            self.client,
+            self.cli_args,
+            line=1,
+            lock=self.ui_lock,
+        )
+
+    def _stop_web(self) -> None:
+        from utils.cli_web import stop_client_web
+
+        stop_client_web(self._web_server)
+        self._web_server = None
 
     def _start_auto_answer_watcher(self) -> None:
         self._stop_auto_answer_watcher()
@@ -484,6 +506,7 @@ class CLIPhone:
         if self.client is None:
             self.logger.debug("Not connected.")
             return
+        self._stop_web()
         try:
             self.client.stop()
         finally:
