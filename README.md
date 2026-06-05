@@ -52,8 +52,11 @@ $env:PYSKINNY_INTEGRATION_LABS = "cm2,cm31,cm33,cm41,cm43"
 $env:PYSKINNY_SKIP_TFTP = "1"
 pytest tests/test_integration_live.py -m integration -v --no-audio
 
-# Single lab
-pytest tests/test_integration_live.py -m "integration and cm43" -v --no-audio
+# Single lab (pytest marker — no env var needed)
+pytest tests/test_integration_live.py -m "integration and cm2" -v --no-audio
+
+# Or limit labs via env (PowerShell: set on the same line, or export before pytest)
+$env:PYSKINNY_INTEGRATION_LABS = "cm2"; pytest tests/test_integration_live.py -m integration -v --no-audio
 ```
 
 | Lab | Default IP | Model | Identity |
@@ -65,6 +68,8 @@ pytest tests/test_integration_live.py -m "integration and cm43" -v --no-audio
 | cm43 | 100.69.0.100 | 7970 | SEP + MAC |
 
 Shared MACs: `222233334444`–`446`. Disable a lab: `PYSKINNY_CM33_DISABLE=1`.
+
+Integration call scenarios: outbound connect/hangup, hold/resume, blind transfer, consulted transfer (three endpoints per lab).
 
 Only one SCCP client can hold a device/MAC at a time — stop consoles before running integration tests.
 

@@ -51,7 +51,7 @@ On Virtual30 there is no **Transfer** template button — use **Stimulus 4** (`p
 
 **Blind transfer:** Transfer → dial → Transfer **without** waiting for answer.
 
-Console: map an F-key to transfer via CLI `phone transfer 1091` after the first Transfer, or use macro `TRANSFER 1091` on a consult path. Digit keys during transfer dial the consult number.
+Console: **`t`** starts transfer; dial the target with digit keys; **`t`** again to complete (blind or consult). CLI: `phone transfer 1091` after the first Transfer, or macro `TRANSFER 1091`.
 
 **Blind transfer** (`blind_xfer.pcap`): Stimulus **4** → dial target (e.g. `1091`) → Stimulus **4** again → optional OnHook.
 

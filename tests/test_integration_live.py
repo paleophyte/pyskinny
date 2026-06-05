@@ -14,6 +14,11 @@ Built-in defaults:
   set PYSKINNY_INTEGRATION_LABS=cm2,cm31,cm33,cm41,cm43
   pytest tests/test_integration_live.py -m integration -v --no-audio
 
+PowerShell: set the env var on the same line as pytest (a following line does not apply
+to the command already running):
+
+  $env:PYSKINNY_INTEGRATION_LABS="cm2"; pytest tests/test_integration_live.py -m integration -v --no-audio
+
 Per-lab markers: ``cm2``, ``cm31``, ``cm33``, ``cm41``, ``cm43``.
 Override any lab: ``PYSKINNY_CM41_SERVER``, ``PYSKINNY_CM31_MODEL``, etc.
 Disable one lab: ``PYSKINNY_CM33_DISABLE=1``.
@@ -41,6 +46,7 @@ from tests.integration_lab import (
     log_softkey_inventory,
     start_client,
     stop_client,
+    run_consulted_transfer,
     wait_blind_transfer_complete,
     wait_call_cleared,
     wait_call_state,
@@ -223,6 +229,41 @@ class TestLiveCalls:
             )
             client_a.blind_transfer(dn_c)
             wait_blind_transfer_complete(client_a, client_c, client_b)
+            hangup(client_b)
+            hangup(client_c)
+            assert wait_call_cleared(client_b) or wait_call_cleared(client_c)
+        finally:
+            for client, state in reversed(clients):
+                stop_client(client, state)
+                time.sleep(1.5)
+
+    def test_consulted_transfer(self, live_lab: LabProfile):
+        time.sleep(2)
+        endpoints = [live_lab.endpoint_a, live_lab.endpoint_b, live_lab.endpoint_c]
+        if not live_lab.endpoint_c:
+            pytest.skip("third endpoint required for consulted transfer")
+        clients = []
+        try:
+            for ep in endpoints:
+                clients.append(start_client(live_lab, ep))
+            client_a, state_a = clients[0]
+            client_b, state_b = clients[1]
+            client_c, state_c = clients[2]
+            if live_lab.name == "cm2":
+                assert state_a.button_template, (
+                    f"{state_a.device_name}: expected ButtonTemplateRes on cm2"
+                )
+            dn_b = line_dn(state_b)
+            dn_c = line_dn(state_c)
+            connect_two_party(client_a, state_a, client_b, state_b, dn_b=dn_b)
+            logger.info(
+                "[%s] consulted transfer A %s -> C %s (B=%s)",
+                live_lab.name,
+                call_ref_summary(state_a),
+                dn_c,
+                dn_b,
+            )
+            run_consulted_transfer(client_a, client_c, client_b, dn_c)
             hangup(client_b)
             hangup(client_c)
             assert wait_call_cleared(client_b) or wait_call_cleared(client_c)

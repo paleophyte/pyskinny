@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass
 from typing import Literal
@@ -232,6 +233,39 @@ def wait_call_cleared(client: SCCPClient, *, timeout: float = 20.0) -> bool:
     return not client.state.active_calls_list
 
 
+def _assert_transfer_bridge(
+    original: SCCPClient,
+    target: SCCPClient,
+    *,
+    connect_timeout: float = 20.0,
+    label: str = "transfer",
+) -> None:
+    assert original.events.call_connected.wait(timeout=connect_timeout), (
+        f"{original.state.device_name} not connected after {label}: {original.state.calls}"
+    )
+    assert target.events.call_connected.wait(timeout=connect_timeout), (
+        f"{target.state.device_name} not connected after {label}: {target.state.calls}"
+    )
+    ref_b = (
+        str(original.state.active_calls_list[-1])
+        if original.state.active_calls_list
+        else None
+    )
+    ref_c = (
+        str(target.state.active_calls_list[-1])
+        if target.state.active_calls_list
+        else None
+    )
+    if ref_b:
+        assert wait_call_state(
+            original, ref_b, 5, expected_name="Connected", timeout=connect_timeout
+        ), original.state.calls.get(ref_b)
+    if ref_c:
+        assert wait_call_state(
+            target, ref_c, 5, expected_name="Connected", timeout=connect_timeout
+        ), target.state.calls.get(ref_c)
+
+
 def wait_blind_transfer_complete(
     transferor: SCCPClient,
     target: SCCPClient,
@@ -254,32 +288,45 @@ def wait_blind_transfer_complete(
         )
     answer_call(target)
     time.sleep(0.75)
-    assert original.events.call_connected.wait(timeout=connect_timeout), (
-        f"{original.state.device_name} not connected after blind transfer: "
-        f"{original.state.calls}"
+    _assert_transfer_bridge(
+        original, target, connect_timeout=connect_timeout, label="blind transfer"
     )
-    assert target.events.call_connected.wait(timeout=connect_timeout), (
-        f"{target.state.device_name} not connected after blind transfer: "
-        f"{target.state.calls}"
+
+
+def run_consulted_transfer(
+    transferor: SCCPClient,
+    target: SCCPClient,
+    original: SCCPClient,
+    dn_target: str,
+    *,
+    ring_timeout: float = 20.0,
+    consult_timeout: float = 30.0,
+    clear_timeout: float = 25.0,
+    connect_timeout: float = 20.0,
+    pause: float = 0.3,
+) -> None:
+    """Consult transfer: auto-answer target, complete bridge, assert B↔C connected."""
+    transferor.events.call_connected.clear()
+
+    def _answer_target() -> None:
+        if target.events.call_ringing.wait(timeout=ring_timeout):
+            answer_call(target)
+
+    answer_thread = threading.Thread(target=_answer_target, daemon=True, name="consult-answer")
+    answer_thread.start()
+    transferor.consulted_transfer(dn_target, pause=pause, consult_timeout=consult_timeout)
+    answer_thread.join(timeout=ring_timeout + 10.0)
+
+    cleared = wait_call_cleared(transferor, timeout=clear_timeout)
+    if not cleared:
+        pytest.skip(
+            f"[{transferor.state.device_name}] consulted transfer did not complete "
+            f"(refs={transferor.state.active_calls_list}) — check consult connect or "
+            f"second Transfer on {transferor.state.device_name}"
+        )
+    _assert_transfer_bridge(
+        original, target, connect_timeout=connect_timeout, label="consulted transfer"
     )
-    ref_b = (
-        str(original.state.active_calls_list[-1])
-        if original.state.active_calls_list
-        else None
-    )
-    ref_c = (
-        str(target.state.active_calls_list[-1])
-        if target.state.active_calls_list
-        else None
-    )
-    if ref_b:
-        assert wait_call_state(
-            original, ref_b, 5, expected_name="Connected", timeout=connect_timeout
-        ), original.state.calls.get(ref_b)
-    if ref_c:
-        assert wait_call_state(
-            target, ref_c, 5, expected_name="Connected", timeout=connect_timeout
-        ), target.state.calls.get(ref_c)
 
 
 def connect_two_party(

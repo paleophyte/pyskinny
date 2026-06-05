@@ -571,6 +571,13 @@ class ConsoleApp:
                 logging.getLogger(__name__).exception("hold toggle failed")
             return False
 
+        if ch in ("t", "T"):
+            try:
+                self._press_transfer()
+            except Exception:
+                logging.getLogger(__name__).exception("transfer failed")
+            return False
+
         return False
 
     def draw(self, stdscr):
@@ -702,8 +709,8 @@ class ConsoleApp:
         # Footer / help
         # help1 = "Digits: 0-9 * #   Vol: +/-   Beep: b   Refresh: r   Quit: q   [/]/{/}/g/G: scroll logs   Ctrl-L: clear logs"
         help1 = (
-            "Digits: 0-9 * #   Hook: Space   EndCall: F1/e   Hold: h   Vol: +/-   "
-            "Beep: b   Refresh: r   Quit: q"
+            "Digits: 0-9 * #   Hook: Space   EndCall: F1/e   Hold: h   Transfer: t   "
+            "Vol: +/-   Beep: b   Refresh: r   Quit: q"
         )
         help2 = (
             "[]{}gG: scroll logs   Ctrl-L: clear logs"
@@ -748,6 +755,33 @@ class ConsoleApp:
             self.client.press_resume()
         else:
             self.client.press_hold()
+
+    def _in_transfer_mode(self) -> bool:
+        """True when CM signals mid-transfer (dial consult target, then t again)."""
+        state = self.client.state if self.client else None
+        if not state:
+            return False
+        prompt = (getattr(state, "current_prompt", None) or "").lower()
+        if "transfer" in prompt:
+            return True
+        for call in (getattr(state, "calls", None) or {}).values():
+            if call.get("call_state") == 10:
+                return True
+            name = (call.get("call_state_name") or "").lower()
+            if "transfer" in name:
+                return True
+        return False
+
+    def _press_transfer(self) -> None:
+        """Transfer key: first press starts xfer; dial target; second press completes."""
+        if not self._call_in_progress():
+            return
+        completing = self._in_transfer_mode()
+        self.client.press_transfer(line=self.line)
+        if completing:
+            self.log("Transfer completing…")
+        else:
+            self.log("Transfer started — dial target, then t again")
 
     def _sync_selected_to_refs(self, refs):
         if not refs:
