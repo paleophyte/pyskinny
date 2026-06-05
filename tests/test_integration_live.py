@@ -29,15 +29,18 @@ import pytest
 
 from tests.integration_lab import (
     LabProfile,
+    assert_hold_capable,
     call_ref_summary,
     connect_two_party,
     configured_labs,
     expected_device_name,
     hangup,
     line_dn,
+    log_softkey_inventory,
     start_client,
     stop_client,
     wait_call_cleared,
+    wait_call_state,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,7 +57,7 @@ def pytest_generate_tests(metafunc):
                         None,
                         marks=pytest.mark.skip(
                             reason="No integration labs configured "
-                            "(set PYSKINNY_CM2_SERVER and/or PYSKINNY_CM43_SERVER)"
+                            "(set PYSKINNY_INTEGRATION_LABS=cm2,cm31,cm33,cm41,cm43)"
                         ),
                     )
                 ],
@@ -137,23 +140,30 @@ class TestLiveCalls:
             stop_client(client_b, state_b)
 
     def test_hold_and_resume(self, live_lab: LabProfile):
+        if live_lab.name == "cm2":
+            pytest.skip("CM2 button phones — hold via physical buttons not automated yet")
         time.sleep(2)
         client_b, state_b = start_client(live_lab, live_lab.endpoint_b)
         dn_b = line_dn(state_b)
         client_a, state_a = start_client(live_lab, live_lab.endpoint_a)
         try:
+            log_softkey_inventory(state_a, lab=live_lab.name)
+            assert_hold_capable(state_a, lab=live_lab.name)
             connect_two_party(client_a, state_a, client_b, state_b, dn_b=dn_b)
             ref = str(state_a.active_calls_list[-1])
             client_a.press_softkey("Hold")
-            time.sleep(1.0)
-            if state_a.calls.get(ref, {}).get("call_state") != 8:
+            if not wait_call_state(client_a, ref, 8, expected_name="Hold", timeout=12.0):
                 pytest.skip(
-                    f"[{live_lab.name}] hold not observed (ref={ref}, state={state_a.calls.get(ref)})"
+                    f"[{live_lab.name}] hold not observed after SoftKey Hold "
+                    f"(ref={ref}, state={state_a.calls.get(ref)}) — check CM softkey "
+                    f"template / feature on {state_a.device_name}"
                 )
             client_a.press_softkey("Resume")
-            time.sleep(0.75)
-            assert state_a.calls[ref]["call_state"] == 5, state_a.calls[ref]
+            assert wait_call_state(
+                client_a, ref, 5, expected_name="Connected", timeout=12.0
+            ), state_a.calls.get(ref)
             hangup(client_a)
+            hangup(client_b)
         finally:
             stop_client(client_a, state_a)
             stop_client(client_b, state_b)

@@ -580,7 +580,7 @@ Wireshark on the sim host:
 
 ## Roadmap / TODO / Ideas
 
-See also [docs/lab-cookbook.md](docs/lab-cookbook.md) for the current simulator lab.
+| **Hold / resume on live CM** | [docs/lab-softkey-hold.md](docs/lab-softkey-hold.md) |
 
 **Done (simulator / client)**
 - [x] CallManager simulator (register, TFTP, calls between clients)
@@ -600,6 +600,7 @@ See also [docs/lab-cookbook.md](docs/lab-cookbook.md) for the current simulator 
 - [x] Consulted transfer (sim + client)
 - [x] Mini web UI for phone remote control / screenshots
 - [ ] CM2 CallInfo / synthetic ref hardening (when CM2 lab available)
+- [ ] CM2 hold via physical buttons (not SoftKeyEvent)
 - [ ] SIP phone support
 
 ---

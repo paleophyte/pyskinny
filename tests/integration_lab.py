@@ -262,3 +262,58 @@ def call_ref_summary(state: PhoneState) -> str:
     refs = list(state.active_calls_list or [])
     kinds = ["synthetic" if str(r).startswith("cm2-") else "numeric" for r in refs]
     return f"refs={refs} kinds={kinds}"
+
+
+def wait_call_state(
+    client: SCCPClient,
+    call_ref: str | int,
+    expected_state: int,
+    *,
+    timeout: float = 12.0,
+    expected_name: str | None = None,
+) -> bool:
+    """Poll until a call ref reaches the given Skinny call_state (e.g. 8 = Hold)."""
+    ref = str(call_ref)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        call = client.state.calls.get(ref, {}) or {}
+        if call.get("call_state") == expected_state:
+            return True
+        if expected_name and call.get("call_state_name") == expected_name:
+            return True
+        time.sleep(0.25)
+    return False
+
+
+def log_softkey_inventory(state: PhoneState, *, lab: str = "") -> None:
+    from utils.softkeys import connected_softkey_labels, template_label_set
+
+    prefix = f"[{lab}] " if lab else ""
+    labels = template_label_set(state.softkey_template or {})
+    connected = connected_softkey_labels(
+        state.softkey_set_definition or {},
+        state.softkey_template or {},
+    )
+    logger.info(
+        "%s%s softkeys: template=%s connected_set=%s selected_set=%s",
+        prefix,
+        state.device_name,
+        labels,
+        connected,
+        state.selected_softkey_set,
+    )
+
+
+def assert_hold_capable(state: PhoneState, *, lab: str = "") -> None:
+    """Skip early when CM template clearly lacks Hold/Resume."""
+    from utils.softkeys import template_label_set
+
+    labels = template_label_set(state.softkey_template or {})
+    if not labels:
+        return
+    missing = [name for name in ("Hold", "Resume") if name not in labels]
+    if missing:
+        pytest.skip(
+            f"{lab + ': ' if lab else ''}{state.device_name} SoftKeyTemplate missing "
+            f"{', '.join(missing)} — assign a standard 79xx softkey template in CUCM"
+        )

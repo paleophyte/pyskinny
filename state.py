@@ -235,27 +235,21 @@ class PhoneState:
         if self.softkey_set_definition == {} or self.softkey_template == {}:
             return []
 
-        # Template entries are keyed by position in SoftKeyTemplateRes; set definitions
-        # reference softKeyTemplateIndex (event id, e.g. 9=EndCall).
-        by_event = {
-            int(v.get("event", 0) or 0): v
-            for v in self.softkey_template.values()
-            if v.get("event") is not None
-        }
+        from utils.softkeys import resolve_template_by_index
 
         keys = []
-        if keyset_override:
+        if keyset_override is not None:
             sk_set = keyset_override
         else:
             sk_set = self.selected_softkey_set
         sk_def = self.softkey_set_definition.get(str(sk_set), {})
         for _k, v in sorted(sk_def.items(), key=lambda item: int(item[0])):
             template_index = int(v.get("template_index", 0) or 0)
-            templ_data = by_event.get(template_index, {})
-            label = templ_data.get("label", "")
+            templ_data = resolve_template_by_index(self.softkey_template, template_index)
+            label = templ_data.get("label", "") or v.get("template_index_name", "")
             event = templ_data.get("event", template_index)
             if label or event:
-                keys.append((label, event))
+                keys.append((label, int(event)))
 
         return keys
 

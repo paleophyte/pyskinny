@@ -8,7 +8,6 @@ from messages.keepalive import send_keepalive_req
 from state import PhoneState
 from utils.tftp import get_device_config_via_tftp
 from messages.generic import (
-    DEFAULT_SOFTKEY_EVENTS,
     handle_softkey_press,
     handle_keypad_press,
     handle_button_press,
@@ -436,10 +435,9 @@ class SCCPClient:
         handle_button_press(self, 9, line_instance)
 
     def _resolve_softkey_event(self, softkey_name: str) -> int | None:
-        for v in (self.state.softkey_template or {}).values():
-            if v.get("label") == softkey_name:
-                return int(v["event"])
-        return DEFAULT_SOFTKEY_EVENTS.get(softkey_name)
+        from utils.softkeys import resolve_softkey_event_for_label
+
+        return resolve_softkey_event_for_label(self.state.softkey_template or {}, softkey_name)
 
     def press_softkey(self, softkey_name, line=1, call_ref=0):
         active_line, active_call_ref = self.resolve_call_target(
