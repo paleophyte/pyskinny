@@ -289,9 +289,11 @@ class SCCPClient:
                     try:
                         dispatch_message(self, msg_id, payload)
                     except Exception as e:
-                        self.logger.error(f"({self.state.device_name}) Unexpected error in dispatch: {e}",
-                                          exc_info=True)
-                        break
+                        self.logger.error(
+                            f"({self.state.device_name}) Unexpected error in dispatch: {e}",
+                            exc_info=True,
+                        )
+                        continue
                 elif status in ("timeout",):
                     continue  # check flags and loop
                 else:  # "closed", "error"
