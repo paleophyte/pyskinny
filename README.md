@@ -11,9 +11,10 @@ pyskinny includes both a SCCP Client and a grab-bag of practical scripts for pok
 
 ## What’s inside
 
-- **SCCP 'Softphone' Client**
-  - Macro Mode
-  - Cisco-esque CLI mode
+- **SCCP softphone client** (79xx softkeys + CM2 button-template phones)
+  - Console UI (`run_console`), Cisco-style CLI, macro/IVR mode
+  - Hold/resume, blind & consulted transfer, conference (lab-tested on cm2 + cm31/33/41/43)
+  - Default RTP TX is **silence** with local RX monitor; `--rtp-mic` / `--rtp-tone` for troubleshooting
 - **CallManager 4.1 AXL v1 SOAP helpers**
   - `listPhoneByName` / `listPhoneByDescription`
   - `executeSQLQuery` with a **smart rewrite** to safely expand `Device.*` (avoids the XML LOB column)
@@ -36,7 +37,13 @@ pip install -e ".[dev]"
 pytest -m "not integration" -v --no-audio
 ```
 
-**Lab cookbook:** step-by-step simulator scenarios (3 consoles, IVR macro, admin Reset, second call) — [docs/lab-cookbook.md](docs/lab-cookbook.md).
+**Lab docs**
+
+| Topic | Doc |
+|-------|-----|
+| Simulator scenarios (IVR, 3 phones, admin reset) | [docs/lab-cookbook.md](docs/lab-cookbook.md) |
+| Softkey hold/resume (cm31/33/41/43) | [docs/lab-softkey-hold.md](docs/lab-softkey-hold.md) |
+| CM2 button phones (Stimulus hold/transfer) | [docs/lab-cm2-buttons.md](docs/lab-cm2-buttons.md) |
 
 ### CI (GitHub Actions)
 
@@ -69,7 +76,15 @@ $env:PYSKINNY_INTEGRATION_LABS = "cm2"; pytest tests/test_integration_live.py -m
 
 Shared MACs: `222233334444`–`446`. Disable a lab: `PYSKINNY_CM33_DISABLE=1`.
 
-Integration call scenarios: outbound connect/hangup, hold/resume, blind transfer, consulted transfer (three endpoints per lab).
+**Integration scenarios** (each lab, three endpoints where noted): register/unregister, outbound connect/hangup, hold/resume, blind transfer, consulted transfer.
+
+```powershell
+# Examples
+pytest tests/test_integration_live.py -m "integration and cm2" -v --no-audio
+pytest tests/test_integration_live.py -k "hold or blind or consulted" -m integration -v --no-audio
+```
+
+**Diagnostics** (against live CM): `python -m utils.dump_softkeys --config`, `python -m utils.dump_buttons --config` (CM2).
 
 Only one SCCP client can hold a device/MAC at a time — stop consoles before running integration tests.
 
@@ -198,27 +213,32 @@ phone# exit
 ```
 
 ### examples/run_console.py
-#### Console based Softphone UI
-```bash
-python -m examples.run_console -vvv --server <server_ip_or_hostname> --mac <device_mac_address> --model <device_model_number>
+#### Console softphone UI
 
- SEP222233334444  |  Cisco 7970  |  CUCM: 10.0.0.180                  [ Active Calls ]                                   │ [ Logs ]
-                                                                        16777342  [Connected]    9 seconds               │ [INFO] messages.phone: [RECV] CallInfo
-  Prompt: Connected                                                                                                      │ [INFO] messages.phone: [RECV] StopTone
-                                                                                                                         │ [INFO] messages.phone: [RECV] OpenReceiveChannel
-  Call: ACTIVE   Line: 1   Ref: -                                                                                        │ [INFO] SCCPClient: [RTP RX] listening on 54063
-  Remote:                                                                                                                │ [INFO] messages.phone: [SEND] OpenReceiveChannelAck -> IP: 10.102.219.79, Port:
-                                                                                                                         │  54063, CallRef: 16777342
-  Softkeys (F1..F12):                                                                                                    │ [INFO] messages.phone: [RECV] CallState
-  F1:Hold   F2:EndCall   F3:Trnsfer   F4:Park   F5:Confrn   F6:ConfList   F7:Select   F8:Join   F9:DirTrfr               │ [INFO] messages.capabilities: (SEP222233334444) [RECV] SelectSoftKeys
-  F10:VidMode                                                                                                            │ [INFO] SCCPClient: (SEP222233334444) [PROMPT] 'Connected'
-                                                                                                                         │ [INFO] messages.capabilities: (SEP222233334444) [RECV] DisplayPromptStatus
-                                                                                                                         │ [INFO] messages.phone: [RECV] CallInfo
-                                                                                                                         │ [INFO] messages.phone: [RECV] StopTone
-                                                                                                                         │ [INFO] SCCPClient: [RTP TX] -> 10.102.219.79:65322 PT=0 ptime=20ms sr=8000
- Digits: 0-9 * &num;   Vol: +/-   Beep: b   Refresh: r   Quit: q   [/]/{/}/g/G: scroll logs   Ctrl-L: clear logs             │ [INFO] messages.phone: [RECV] StartMediaTransmission
-                                                                                                                         │                                                                                            │
+```bash
+# 79xx (softkeys)
+pyskinny-console --server 10.0.0.180 --mac 222233334444 --model 7970
+
+# CM2 button phone (device name, not MAC)
+pyskinny-console --server 10.0.0.11 --device pyskinny01 --model Virtual30SPplus
+
+# Optional: mini web UI + RTP flags (see utils/cli_media.py)
+pyskinny-console --config --web-port 8766
 ```
+
+**Keyboard (console)**
+
+| Key | Action |
+|-----|--------|
+| `0-9 * #` | DTMF / dial |
+| Space | Hook on/off |
+| `h` | Hold / resume toggle |
+| `t` | Transfer (dial target, then `t` again to complete) |
+| `e` or F-key EndCall | Hang up |
+| F1–F8 | Softkeys (79xx) or button-template actions (CM2) |
+| `q` | Quit (sends Unregister) |
+
+Audio: hear the remote party by default (RX monitor). TX is silence unless `--rtp-mic`, `--rtp-tone`, or `--rtp-loopback`. CM2 may report `compression_type=160366308`; that is mapped to G.711 and does not affect listen-only calls.
 
 ### tools/callmanager.py
 #### List phones via AXL
@@ -585,29 +605,18 @@ Wireshark on the sim host:
 
 ## Roadmap / TODO / Ideas
 
-| **Hold / resume on live CM** | [docs/lab-softkey-hold.md](docs/lab-softkey-hold.md) |
-| **CM2 button template / hold** | [docs/lab-cm2-buttons.md](docs/lab-cm2-buttons.md) (`python -m utils.dump_buttons`) |
+**Live CM labs** (cm2, cm31, cm33, cm41, cm43): integration tests cover registration, connect/hangup, hold/resume, blind transfer, consulted transfer. See [docs/lab-softkey-hold.md](docs/lab-softkey-hold.md) and [docs/lab-cm2-buttons.md](docs/lab-cm2-buttons.md).
 
-**Done (simulator / client)**
-- [x] CallManager simulator (register, TFTP, calls between clients)
-- [x] Simulator blind transfer
-- [x] Multi-call: hold, second call while on hold, call-ref tracking
-- [x] Simulator admin UI (Reset/Restart, bulk actions, end call, provision)
-- [x] `run_console` auto-reconnect after Reset/Restart
-- [x] IVR: barge-in, macro transfers, virtual `--ivr-dn`
-- [x] Console / CLI / macro softphones; auto-answer
-
-**Next**
-- [x] GitHub Actions CI (unit tests on push)
-- [x] `pyproject.toml` / `pip install pyskinny`
+**Done**
+- [x] CallManager simulator, admin UI, TFTP relay, capture regression tests
+- [x] Console / CLI / macro softphones; web UI; auto-reconnect after CM Reset
+- [x] Hold/resume, blind & consulted transfer, conference (sim + client + live labs)
+- [x] CM2 button phones: Stimulus hold (3), transfer (4), SetLamp call tracking, synthetic `cm2-N` refs
+- [x] GitHub Actions CI; `pip install -e ".[dev]"`
 
 **Later**
-- [x] Conference (sim + client)
-- [x] Consulted transfer (sim + client)
-- [x] Mini web UI for phone remote control / screenshots
-- [ ] CM2 CallInfo / synthetic ref hardening (when CM2 lab available)
-- [x] CM2 hold client path (`press_hold`: Stimulus Hold + HookFlash fallback; see `dump_buttons`)
 - [ ] SIP phone support
+- [ ] Additional Skinny codecs (G.729 TX, wideband) beyond G.711 monitor
 
 ---
 

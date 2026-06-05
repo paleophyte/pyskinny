@@ -59,7 +59,7 @@ Console: **`t`** starts transfer; dial the target with digit keys; **`t`** again
 
 Default `run_console` TX is **silence** (hear remote party via RX monitor). Use `--rtp-mic` only if you have a working microphone. Without it, PortAudio `device -1` errors came from the old default mic TX mode.
 
-Codec warnings (`compression_type=160366308`) are noisy but usually non-fatal.
+`compression_type=160366308` on CM2 is registered as `CM2_G711UlawCap` (G.711 on the wire); TX stays silence unless you use `--rtp-tone` / `--rtp-mic`.
 
 ### Shutting down (`pgm_exit.pcap`)
 

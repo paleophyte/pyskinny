@@ -17,7 +17,7 @@ from utils.call_management import (
 from utils.client import get_local_ip, ip_to_int, _keypad_code_to_char
 from audio_worker import RTPReceiver, RTPSender, wire_rtp_loopback, socket
 from utils.rtp_record import RTPRecorder, rtp_record_base_path
-from utils.media_codecs import codec_label, resolve_rtp_payload_type
+from utils.media_codecs import codec_label, lookup_skinny_compression, resolve_rtp_payload_type
 from utils.rtp_stats import RTPStats, RTPStatsMonitor
 import logging
 logger = logging.getLogger(__name__)
@@ -45,21 +45,22 @@ def _resolve_tx_payload_type(client, compression_type: int) -> tuple[int, bool]:
     )
     if _rtp_pt_override(client) is not None:
         return pt, False
-    if spec.compression_type != compression_type or used_fallback:
-        logger.warning(
-            "Skinny compression_type=%s (%s) -> RTP PT=%s%s",
-            compression_type,
-            codec_label(compression_type),
-            pt,
-            " (fallback)" if used_fallback else "",
-        )
-    elif not spec.encode_supported:
-        logger.warning(
-            "Skinny codec %s (PT=%s) is not encoded yet; TX may not match remote",
-            spec.name,
-            pt,
-        )
-    return pt, spec.encode_supported
+    if lookup_skinny_compression(compression_type) is not None:
+        if not spec.encode_supported:
+            logger.debug(
+                "Skinny compression_type=%s (%s): TX silence (RX uses RTP PT from wire)",
+                compression_type,
+                spec.name,
+            )
+        return pt, spec.encode_supported
+    logger.warning(
+        "Skinny compression_type=%s (%s) unregistered -> RTP PT=%s%s",
+        compression_type,
+        codec_label(compression_type),
+        pt,
+        " (fallback)" if used_fallback else "",
+    )
+    return pt, False
 
 
 def _rtp_loopback_enabled(client) -> bool:

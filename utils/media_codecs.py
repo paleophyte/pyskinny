@@ -30,6 +30,14 @@ SKINNY_CODEC_REGISTRY: dict[int, MediaCodecSpec] = {
     12: MediaCodecSpec(12, "GSM_FR", rtp_payload_type=3, encode_supported=False, decode_supported=False),
     18: MediaCodecSpec(18, "G729", rtp_payload_type=18, encode_supported=False, decode_supported=False),
     19: MediaCodecSpec(19, "G729AnnexA", rtp_payload_type=18, encode_supported=False, decode_supported=False),
+    # CM2 Virtual30SPplus StartMediaTransmission capability id (RTP on wire is still G.711).
+    160366308: MediaCodecSpec(
+        160366308,
+        "CM2_G711UlawCap",
+        rtp_payload_type=0,
+        encode_supported=False,
+        decode_supported=True,
+    ),
 }
 
 DEFAULT_SKINNY_COMPRESSION = 4
@@ -62,8 +70,8 @@ def resolve_rtp_payload_type(
         return DEFAULT_CODEC.rtp_payload_type or 0, spec, True
 
     if not spec.encode_supported:
-        # TX path only supports G711 today; keep PT honest but caller should warn.
-        return spec.rtp_payload_type, spec, True
+        # Known codec we do not encode (TX stays silence); not an unknown fallback.
+        return spec.rtp_payload_type or (DEFAULT_CODEC.rtp_payload_type or 0), spec, False
 
     return spec.rtp_payload_type, spec, False
 

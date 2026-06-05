@@ -45,7 +45,16 @@ def test_g729_not_encode_supported():
     assert spec.encode_supported is False
     pt, _, fb = resolve_rtp_payload_type(18)
     assert pt == 18
-    assert fb is True
+    assert fb is False
+
+
+def test_cm2_virtual30_compression_type():
+    spec = lookup_skinny_compression(160366308)
+    assert spec is not None
+    assert spec.name == "CM2_G711UlawCap"
+    pt, _, fb = resolve_rtp_payload_type(160366308)
+    assert pt == 0
+    assert fb is False
 
 
 def test_codec_label_unknown():
