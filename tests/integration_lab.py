@@ -256,6 +256,14 @@ def connect_two_party(
     )
     assert state_a.active_calls_list, "caller missing active call ref"
     assert state_b.active_calls_list, "callee missing active call ref"
+    ref_a = str(state_a.active_calls_list[-1])
+    ref_b = str(state_b.active_calls_list[-1])
+    assert wait_call_state(
+        client_a, ref_a, 5, expected_name="Connected", timeout=connect_timeout
+    ), f"caller not in Connected: {state_a.calls.get(ref_a)}"
+    assert wait_call_state(
+        client_b, ref_b, 5, expected_name="Connected", timeout=connect_timeout
+    ), f"callee not in Connected: {state_b.calls.get(ref_b)}"
 
 
 def call_ref_summary(state: PhoneState) -> str:

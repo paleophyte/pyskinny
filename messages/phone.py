@@ -267,6 +267,10 @@ def parse_set_ringer(client, payload):
         if not ref and client.state.active_calls_list:
             ref = client.state.active_calls_list[-1]
         if ref:
+            existing = client.state.calls.get(str(ref), {})
+            # CM often sends SetRinger while connected (e.g. stop ring); do not regress state.
+            if existing.get("call_state") in (5, 8):
+                return
             mark_call_ringing(
                 client,
                 ref,

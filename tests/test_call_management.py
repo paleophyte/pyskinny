@@ -1,8 +1,10 @@
+import struct
 import threading
 from types import SimpleNamespace
 
 import pytest
 
+from messages.phone import parse_set_ringer
 from state import PhoneState
 from utils.call_management import (
     apply_call_state_from_skinny,
@@ -79,3 +81,27 @@ def test_apply_call_state_proceed_updates_without_side_effects():
     assert client.state.calls["55"]["call_state"] == 12
     assert client.state.active_calls_list == []
     assert client.events.call_ringing.is_set() is False
+
+
+def test_set_ringer_does_not_regress_connected_call():
+    client = _FakeClient()
+    mark_call_connected(client, call_reference=16777222, line_instance=1)
+    parse_set_ringer(client, struct.pack("<IIII", 1, 1, 1, 16777222))
+    assert client.state.calls["16777222"]["call_state"] == 5
+    assert client.state.calls["16777222"]["call_state_name"] == "Connected"
+
+
+def test_set_ringer_still_marks_ringing_before_connect():
+    client = _FakeClient()
+    update_call_state(
+        client,
+        call_reference=99,
+        line_instance=1,
+        call_state=3,
+        call_state_name="RingOut",
+        source="test",
+    )
+    client.state.active_calls_list.append("99")
+    parse_set_ringer(client, struct.pack("<IIII", 2, 1, 1, 99))
+    assert client.state.calls["99"]["call_state"] == 4
+    assert client.events.call_ringing.is_set()
