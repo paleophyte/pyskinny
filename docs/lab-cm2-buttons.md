@@ -55,6 +55,8 @@ Console: **`t`** starts transfer; dial the target with digit keys; **`t`** again
 
 **Blind transfer** (`blind_xfer.pcap`): Stimulus **4** → dial target (e.g. `1091`) → Stimulus **4** again → optional OnHook.
 
+**Consult transfer** (`consult_xfer.pcap`): same phone TX as blind; CM sends **CallInfo** + **StartTone** (alerting) after the last dial digit while the consult leg rings, then the second Stimulus **4** completes the bridge.
+
 ### Audio / console errors
 
 Default `run_console` TX is **silence** (hear remote party via RX monitor). Use `--rtp-mic` only if you have a working microphone. Without it, PortAudio `device -1` errors came from the old default mic TX mode.

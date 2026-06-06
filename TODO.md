@@ -62,7 +62,7 @@ These show up as `Unhandled message ID` in logs (`dispatcher.py`) or are mis-wir
 
 - [ ] **Live conference test** — `client.conference()` works in sim; no `test_conference` in `test_integration_live.py` yet.
 - [ ] **Periodic full-lab run** — script or CI note: `pytest tests/test_integration_live.py -m integration -v --no-audio` (all five labs; stop consoles first).
-- [ ] **Consult transfer pcap regression** — `consult_xfer.pcap` exists locally (gitignored); add `tests/test_consult_xfer_capture.py` like blind xfer.
+- [x] **Consult transfer pcap regression** — `tests/test_consult_xfer_capture.py` (wire hex from local `consult_xfer.pcap`).
 - [ ] **Fail vs skip** — integration helpers use `pytest.skip` when CM doesn’t complete transfer/hold; consider hard `fail` for labs you expect green every run.
 
 ### Documentation drift
