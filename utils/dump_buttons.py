@@ -11,7 +11,7 @@ import messages  # noqa: F401
 from client import SCCPClient
 from utils.buttons import hold_resume_hints, iter_template_buttons
 from utils.cli_media import add_connection_cli_args, init_phone_state_from_args
-from utils.logs import configure_logging_from_verbose
+from utils.logs import add_logging_cli_args, configure_logging_from_verbose
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -19,10 +19,10 @@ def main(argv: list[str] | None = None) -> int:
         description="Register and dump button template from CM (CM2 / 79xx button layout)",
     )
     add_connection_cli_args(parser, required=True)
-    parser.add_argument("-v", "--verbose", action="count", default=0)
+    add_logging_cli_args(parser)
     args = parser.parse_args(argv)
 
-    configure_logging_from_verbose(args.verbose)
+    configure_logging_from_verbose(args.verbose, log_file=args.log_file)
     state = init_phone_state_from_args(args)
     state.enable_audio = False
     client = SCCPClient(state)

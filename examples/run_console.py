@@ -3,7 +3,7 @@ from ui.console import ConsoleApp
 import curses
 import logging
 from utils.cli_media import add_connection_cli_args, add_media_cli_args
-from utils.logs import configure_logging_from_verbose
+from utils.logs import add_logging_cli_args, configure_logging_from_verbose
 from utils.client import write_json_to_file
 
 
@@ -25,12 +25,14 @@ def main():
         help="Bind address for --web-port (use 0.0.0.0 for LAN access in the lab)",
     )
     add_media_cli_args(parser)
-    parser.add_argument("-v", "--verbose", action="count", default=0,
-                        help="Increase output verbosity (-v = warning, -vv = message, -vvv = info, -vvvv = debug)")
+    add_logging_cli_args(parser)
     args = parser.parse_args()
 
-    log_level = configure_logging_from_verbose(args.verbose)
-    logging.getLogger(__name__).debug("Log level set to: %s", logging.getLevelName(log_level))
+    log_level = configure_logging_from_verbose(args.verbose, log_file=args.log_file)
+    log = logging.getLogger(__name__)
+    log.debug("Log level set to: %s", logging.getLevelName(log_level))
+    if args.log_file:
+        log.info("Also logging to %s", args.log_file)
 
     app = ConsoleApp(
         skip_tftp=args.skip_tftp,

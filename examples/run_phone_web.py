@@ -8,7 +8,7 @@ import signal
 import sys
 
 from ui.phone_web import run_server
-from utils.logs import configure_logging_from_verbose
+from utils.logs import add_logging_cli_args, configure_logging_from_verbose
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -22,10 +22,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--port", type=int, default=8765, help="HTTP port (default 8765)")
     parser.add_argument("--title", default="Phone remote", help="Browser tab title")
-    parser.add_argument("-v", "--verbose", action="count", default=0)
+    add_logging_cli_args(parser)
     args = parser.parse_args(argv)
 
-    configure_logging_from_verbose(args.verbose)
+    configure_logging_from_verbose(args.verbose, log_file=args.log_file)
     logging.getLogger(__name__).info(
         "Open http://%s:%s/ in a browser",
         "127.0.0.1" if args.host == "0.0.0.0" else args.host,

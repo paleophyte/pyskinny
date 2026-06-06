@@ -11,17 +11,17 @@ import messages  # noqa: F401
 from client import SCCPClient
 from state import PhoneState
 from utils.cli_media import add_connection_cli_args, init_phone_state_from_args
-from utils.logs import configure_logging_from_verbose
+from utils.logs import add_logging_cli_args, configure_logging_from_verbose
 from utils.softkeys import connected_softkey_labels, template_label_set
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Register and dump softkey template from CM")
     add_connection_cli_args(parser, required=True)
-    parser.add_argument("-v", "--verbose", action="count", default=0)
+    add_logging_cli_args(parser)
     args = parser.parse_args(argv)
 
-    configure_logging_from_verbose(args.verbose)
+    configure_logging_from_verbose(args.verbose, log_file=args.log_file)
     state = init_phone_state_from_args(args)
     state.enable_audio = False
     client = SCCPClient(state)

@@ -24,7 +24,7 @@ import sys
 
 from simulator.server import SkinnySimulator
 from simulator.tftp_service import PRIVILEGED_TFTP_PORT
-from utils.logs import configure_logging_from_verbose
+from utils.logs import add_logging_cli_args, configure_logging_from_verbose
 
 
 def main() -> None:
@@ -121,14 +121,14 @@ def main() -> None:
         action="store_true",
         help="Disable the web admin UI (same as --admin-port 0)",
     )
-    parser.add_argument("-v", "--verbose", action="count", default=0)
+    add_logging_cli_args(parser)
     args = parser.parse_args()
 
     auto_answer = list(args.auto_answer)
     if args.auto_answer_all:
         auto_answer.append("*")
 
-    configure_logging_from_verbose(args.verbose)
+    configure_logging_from_verbose(args.verbose, log_file=args.log_file)
 
     rtp_sim_peer = args.rtp_sim_peer
     if args.ivr_dn and rtp_sim_peer == "off":

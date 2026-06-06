@@ -1,7 +1,12 @@
+from __future__ import annotations
+
+import argparse
 import logging
+from pathlib import Path
 
 
 MESSAGE_LOG_LEVEL = logging.WARNING - 5
+DEFAULT_LOG_FMT = "%(asctime)s [%(levelname)-7s] %(name)-22s: %(message)s"
 _VERBOSE_COUNT = 0
 
 
@@ -101,9 +106,44 @@ def log_level_from_verbose(verbose: int) -> int:
     return levels[verbosity - 1 if verbosity > 0 else 0]
 
 
+def add_logging_cli_args(parser: argparse.ArgumentParser) -> None:
+    """Add shared -v / --log-file flags for client and diagnostic entry points."""
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="Increase output verbosity (-v = warning, -vv = message, -vvv = info, -vvvv = debug)",
+    )
+    parser.add_argument(
+        "--log-file",
+        default=None,
+        metavar="PATH",
+        help="Also write logs to PATH (e.g. T6.debug.txt for grepping Unhandled message ID)",
+    )
+
+
+def attach_log_file(
+    path: str | Path,
+    *,
+    level: int | None = None,
+    fmt: str | None = None,
+) -> logging.FileHandler:
+    """Append a UTF-8 file handler to the root logger."""
+    log_path = Path(path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(log_path, encoding="utf-8")
+    if level is not None:
+        handler.setLevel(level)
+    handler.setFormatter(logging.Formatter(fmt or DEFAULT_LOG_FMT))
+    logging.getLogger().addHandler(handler)
+    return handler
+
+
 def configure_logging_from_verbose(
     verbose: int,
     *,
+    log_file: str | Path | None = None,
     fmt: str | None = None,
     tftpy_level: int = logging.WARNING,
 ) -> int:
@@ -113,10 +153,12 @@ def configure_logging_from_verbose(
     ensure_message_log_level()
     log_level = log_level_from_verbose(verbose)
     if fmt is None:
-        fmt = "%(asctime)s [%(levelname)-7s] %(name)-22s: %(message)s"
+        fmt = DEFAULT_LOG_FMT
     logging.basicConfig(level=log_level, format=fmt, force=True)
     logging.getLogger("tftpy").setLevel(tftpy_level)
     from utils.tftp_logging import configure_tftpy_logging
 
     configure_tftpy_logging(level=tftpy_level)
+    if log_file:
+        attach_log_file(log_file, level=log_level, fmt=fmt)
     return log_level
