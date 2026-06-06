@@ -23,21 +23,10 @@ _DISPLAY_H = 200
 
 
 def _ui_softkey_set(client: SCCPClient) -> int | None:
-    state = client.state
-    if not (getattr(state, "active_call", False) or getattr(state, "active_calls_list", None)):
-        return state.selected_softkey_set
+    from utils.softkeys import ui_softkey_context
 
-    best_idx = None
-    best_ref = -1
-    for key, meta in (state.selected_softkeys or {}).items():
-        if not str(key).isdigit():
-            continue
-        ref = int(key)
-        idx = meta.get("softkeyset_index")
-        if idx is not None and ref >= best_ref:
-            best_ref = ref
-            best_idx = idx
-    return best_idx if best_idx is not None else state.selected_softkey_set
+    set_idx, _mask = ui_softkey_context(client.state)
+    return set_idx
 
 
 def _button_label(state, *, type_name: str, instance: int) -> str:
@@ -80,7 +69,10 @@ class ClientWebController:
             buttons: list[dict[str, Any]] = []
 
             if state.softkey_template:
-                for label, _event in state.get_current_softkeys(_ui_softkey_set(client)):
+                from utils.softkeys import ui_softkey_context
+
+                sk_set, valid_mask = ui_softkey_context(state)
+                for label, _event in state.get_current_softkeys(sk_set, valid_key_mask=valid_mask):
                     if label:
                         softkeys.append({"label": label, "kind": "softkey"})
             elif state.button_template:

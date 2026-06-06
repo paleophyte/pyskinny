@@ -47,6 +47,47 @@ def template_label_set(softkey_template: dict) -> set[str]:
     }
 
 
+def ui_softkey_context(state) -> tuple[int | None, int | None]:
+    """
+    Softkey set index + validKeyMask for UI (console / web).
+
+    Prefers SelectSoftKeys for the selected or most recent active call ref.
+    Falls back to Ring In / Ring Out sets when call state says ringing.
+    """
+    set_idx: int | None = None
+    mask: int | None = None
+
+    refs: list[str] = []
+    sel = getattr(state, "selected_call_reference", None)
+    if sel:
+        refs.append(str(sel))
+    for ref in reversed(getattr(state, "active_calls_list", None) or []):
+        sref = str(ref)
+        if sref not in refs:
+            refs.append(sref)
+
+    for ref in refs:
+        meta = (getattr(state, "selected_softkeys", None) or {}).get(ref)
+        if meta:
+            set_idx = meta.get("softkeyset_index")
+            mask = meta.get("validkey_mask")
+            break
+
+    if refs:
+        call = (getattr(state, "calls", None) or {}).get(refs[0], {})
+        call_state = call.get("call_state")
+        if call_state == 4 and set_idx != 3:
+            set_idx = 3
+            mask = None
+        elif call_state == 3 and set_idx != 8:
+            set_idx = 8
+            mask = None
+
+    if set_idx is None:
+        set_idx = getattr(state, "selected_softkey_set", 0)
+    return set_idx, mask
+
+
 def connected_softkey_labels(softkey_set_definition: dict, softkey_template: dict) -> list[str]:
     """Labels on the Connected softkey set (index 1), if defined."""
     sk_def = softkey_set_definition.get("1", {})

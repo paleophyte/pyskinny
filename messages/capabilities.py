@@ -109,6 +109,9 @@ def send_stat_requests_2(client, payload):
     # packet += get_skinny_message(0x0009, struct.pack("<I", 1))             # ForwardStatReq for Line 1
     # client.sock.sendall(packet)
 
+    # FeatureStatReq (line 1) — CM answers with FeatureStatRes (0x011F); see cm_cap.pcapng
+    send_skinny_message(client, 0x0034, struct.pack("<I", 1))
+
     # TimeDateReq
     send_skinny_message(client, 0x000d)
 
@@ -387,6 +390,17 @@ def parse_forward_stat(client, payload):
 
     # logger.info(f"({client.state.device_name}) [RECV] ForwardStatRes activeForward: {active_forward}, lineNumber: {line_number}, forwardAllActive: {forward_all_active}, forwardAllDirnum: {forward_all_dir_num}, forwardBusyActive: {forward_busy_active}, forwardBusyDirnum: {forward_busy_dir_num}, forwardNoAnswerActive: {forward_no_answer_active}, forwardNoAnswerDirnum: {forward_no_answer_dir_num}")
     logger.info(f"({client.state.device_name}) [RECV] ForwardStatRes")
+
+
+@register_handler(0x011F, "FeatureStatRes")
+def parse_feature_stat_res(client, payload):
+    """CM feature flags (park, transfer, etc.); parse leniently for CM3.x/CM4.x variants."""
+    buf = Buf(payload)
+    feature_count = buf.read_u32(0) if buf.remaining() >= 4 else 0
+    client.state.feature_stat_count = int(feature_count)
+    logger.info(
+        f"({client.state.device_name}) [RECV] FeatureStatRes features={feature_count}"
+    )
 
 
 @register_handler(0x0091, "SpeedDialStatRes")

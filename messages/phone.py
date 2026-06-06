@@ -885,7 +885,6 @@ def parse_open_receive_channel(client, payload):
     )
 
 
-@register_handler(0x0034, "OpenReceiveChannelAck")
 def send_open_receive_channel_ack(client, payload):
     media_reception_status = 0  # 0 = OK
 
@@ -942,7 +941,10 @@ def send_open_receive_channel_ack(client, payload):
 
 @register_handler(0x0106, "CloseReceiveChannel")
 def parse_close_receive_channel(client, payload):
-    conference_id, pass_through_party_id, call_reference = struct.unpack("<III", payload)
+    buf = Buf(payload)
+    conference_id = buf.read_u32(0)
+    pass_through_party_id = buf.read_u32(0) if buf.remaining() >= 4 else 0
+    call_reference = buf.read_u32(0) if buf.remaining() >= 4 else 0
 
     # Close/clear RTP Receiver
     rx = client.state._rtp_rx or None

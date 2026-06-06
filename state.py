@@ -97,6 +97,9 @@ class PhoneState:
         # LineStatRes
         self.lines = {}
 
+        # FeatureStatRes
+        self.feature_stat_count = 0
+
         # SpeedDialStatRes
         self.speed_dials = {}
 
@@ -231,7 +234,7 @@ class PhoneState:
     def to_json(self, indent=2):
         return json.dumps(self.to_dict(), indent=indent)
 
-    def get_current_softkeys(self, keyset_override=None):
+    def get_current_softkeys(self, keyset_override=None, valid_key_mask=None):
         if self.softkey_set_definition == {} or self.softkey_template == {}:
             return []
 
@@ -243,12 +246,15 @@ class PhoneState:
         else:
             sk_set = self.selected_softkey_set
         sk_def = self.softkey_set_definition.get(str(sk_set), {})
-        for _k, v in sorted(sk_def.items(), key=lambda item: int(item[0])):
+        for pos_str, v in sorted(sk_def.items(), key=lambda item: int(item[0])):
+            pos = int(pos_str)
+            if valid_key_mask is not None and not (int(valid_key_mask) & (1 << pos)):
+                continue
             template_index = int(v.get("template_index", 0) or 0)
             templ_data = resolve_template_by_index(self.softkey_template, template_index)
             label = templ_data.get("label", "") or v.get("template_index_name", "")
             event = templ_data.get("event", template_index)
-            if label or event:
+            if label and label != "Undefined":
                 keys.append((label, int(event)))
 
         return keys

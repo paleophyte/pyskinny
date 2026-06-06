@@ -23,10 +23,12 @@ For how to run things today, see [README.md](README.md) and the lab docs linked 
 ## Must — correctness / lab blockers
 
 - [x] Fix sounddevice.PortAudioError: Error querying device -1 when running pyskinny with default options (such as python -m examples.run_console -vvvv --server 10.0.0.181 --device 222233334444 --model 7960). Should log error or warning and only send silence.
-- [ ] Tested on CM31, could affect other versions. I don't see the extension number printed on the screen. This should be shown somewhere since it would normally show up on the actual screen. This would obviously not apply to like first gen phones that didn't show this on the screen.
-- [ ] Tested on CM31, could affect other versions. With run_console, using softkey to get a new line, and then pressing space (hook), the call appears to hang up, but still shows "Call: ACTIVE"
-- [ ] **P3 / cm31 call teardown:** `CloseReceiveChannel (0x0106)` with **8-byte** payload crashes parse (`struct.unpack` expects 12 bytes). Log/traceback in `P3.debug.txt`; wire in `P3.pcapng`.
-- [ ] **P4 / cm33 inbound ring:** On **RingIn**, CM sends `SelectSoftKeys` but `run_console` still shows only `EndCall` (no **Answer**). Template has Answer (T7). See `P4.debug.txt` / `cm33_call.pcapng`.
+- [x] Tested on CM31, could affect other versions. I don't see the extension number printed on the screen. This should be shown somewhere since it would normally show up on the actual screen. This would obviously not apply to like first gen phones that didn't show this on the screen.
+- [x] Tested on CM31, could affect other versions. With run_console, using softkey to get a new line, and then pressing space (hook), the call appears to hang up, but still shows "Call: ACTIVE"
+- [x] **P3 / cm31 call teardown:** `CloseReceiveChannel (0x0106)` with **8-byte** payload crashes parse (`struct.unpack` expects 12 bytes). Log/traceback in `P3.debug.txt`; wire in `P3.pcapng`.
+- [x] **P4 / cm33 inbound ring:** On **RingIn**, CM sends `SelectSoftKeys` but `run_console` still shows only `EndCall` (no **Answer**). Template has Answer (T7). See `P4.debug.txt` / `cm33_call.pcapng`.
+- [ ] **T1/T2 cm31+cm33 hold (blocked):** `test_hold_and_resume` skips — SoftKey Hold sent, prompt becomes `Hold`, but `call_state` stays **Connected** (last update `SetLamp`). Need hold pcap or SetLamp lamp_mode trace on cm31/cm33. Ref: `T1.debug.txt`, `T2.debug.txt`.
+- [ ] **T1 cm41+cm43 consulted transfer (blocked):** `test_consulted_transfer` skips — consult leg does not complete on SEP222233334444. cm31/cm33/cm2 pass. Ref: `T1.debug.txt`.
 
 ### Skinny messages still incomplete on the **client**
 
@@ -41,14 +43,14 @@ These show up as `Unhandled message ID` in logs (`dispatcher.py`) or are mis-wir
 
 ### CM3.x–specific (cm31 = 7960, cm33 = 7970)
 
-- [ ] **Add `FeatureStatRes` handler** — no-op or parse; suppress unhandled warnings during registration.
-- [ ] **Send `FeatureStatReq (0x0034)`** after softkey/button stats (match `cm_cap.pcapng` registration order); confirm on cm31 + cm33.
+- [x] **Add `FeatureStatRes` handler** — no-op or parse; suppress unhandled warnings during registration.
+- [x] **Send `FeatureStatReq (0x0034)`** after softkey/button stats (match `cm_cap.pcapng` registration order); confirm on cm31 + cm33.
 - [ ] **Capture regression fixtures** for cm31/cm33 (today: `cm_cap.pcapng` / `cm_call_*.pcapng` are CM4.1-oriented; CM2 has `tools/cm2_register.pcapng`).
 - [ ] **Document CM3.x quirks** — short `docs/lab-cm3x.md` or section in README (OpenReceiveChannel length, FeatureStat, 7960 vs 7970 model enum).
 
 ### Protocol / state
 
-- [ ] **Remove `@register_handler(0x0034)` from `send_open_receive_channel_ack`** — it is a send helper, not an inbound handler.
+- [x] **Remove `@register_handler(0x0034)` from `send_open_receive_channel_ack`** — it is a send helper, not an inbound handler.
 - [ ] **`CallSelectStatRes (0x0130)`** — handler logs only; does not update call state (may matter for multi-call / transfer on some CM builds).
 - [ ] **`OpenReceiveChannel` → RTP RX** — optionally apply `compression_type` from message instead of inferring PT from first packets.
 
@@ -165,7 +167,7 @@ Drop pcaps in repo root or `tools/` (they are gitignored — share via path name
 | P3 | **cm31 connect call** — A calls B, answer, 5 s connected, hang up | Filter CM IP + port 2000; include **OpenReceiveChannel (0x0105)** and **StartMediaTransmission** | L33, L47, L119 | P3.pcapng & P3.debug.txt. Error on screen. |
 | P4 | **cm33 connect call** — same on cm33 | `cm33_call.pcapng` | L33, L47, L119 | cm33_call.pcapng & P4.debug.txt. Softkeys didn't update to give answer option. |
 | P5 | **FeatureStat only** — if P1/P2 are huge, a short clip from register showing **0x0034** (phone→CM) and **0x011F** (CM→phone) is enough | Note frame numbers or Skinny message list from Wireshark | L31–L32, L38–L39 | |
-| P6 | **Consult transfer (softkey)** — answer C before 2nd Transfer (not blind) | `consult_xfer.pcap` | L57, L144 | `consult_xfer.pcap` (local, gitignored) |
+| P6 | **Consult transfer (softkey)** — answer C before 2nd Transfer (not blind) | `consult_xfer.pcap` | L57, L144 | `consult_xfer.pcap` (local, gitignored) — ready for regression test |
 | P7 | **Conference** — A connected to B → Confrn → dial C → answer → Confrn again (3-way) | `cm41_conference.pcapng` or any lab | L55, L75 | |
 | P8 | **Park** — configure Call Park on a lab CM, then park + retrieve from another phone | `cm*_park.pcapng` | L91 | Planned; park not configured on lab CMs yet |
 | P9 | **CM2 two-way audio** — call with `--rtp-tone` or `--rtp-mic`; confirm TX/RX on Virtual30 | `cm2_media.pcapng` (+ note if you heard remote party) | L98 | Planned |

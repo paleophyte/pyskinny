@@ -353,6 +353,9 @@ def sync_call_flags(client) -> None:
     )
     if not client.state.call_connected:
         client.state.media_active = False
+    if not active:
+        client.state.active_call_line_instance = 0
+        client.state.selected_call_reference = None
 
 
 def mark_call_ended(client, call_reference=None, source="inferred"):

@@ -739,8 +739,23 @@ class SCCPClient:
 
     def on_hook(self):
         from messages.phone import end_local_call
-        end_local_call(self, source="local-onhook")
+        from utils.call_management import sync_call_flags
+
+        refs = list(self.state.active_calls_list or [])
+        if refs:
+            for ref in refs:
+                end_local_call(self, source="local-onhook", call_ref=ref)
+        else:
+            end_local_call(self, source="local-onhook", call_ref=None)
         send_onhook(self)
+        sync_call_flags(self)
+        if not self.state.active_calls_list:
+            self.state.active_call = False
+            self.state.call_active = False
+            self.state.call_connected = False
+            self.state.media_active = False
+            self.state.active_call_line_instance = 0
+            self.state.selected_call_reference = None
         self.state.update_prompt("", 0)
 
     def off_hook(self):

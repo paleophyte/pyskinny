@@ -203,29 +203,14 @@ class ConsoleApp:
         else:
             self._refresh_button_actions()
 
-    def _ui_softkey_set(self) -> int | None:
-        """Prefer the latest numeric-call SelectSoftKeys set during active calls."""
-        state = self.client.state
-        if not (getattr(state, "active_call", False) or getattr(state, "active_calls_list", None)):
-            return state.selected_softkey_set
-
-        best_idx = None
-        best_ref = -1
-        for key, meta in (state.selected_softkeys or {}).items():
-            if not str(key).isdigit():
-                continue
-            ref = int(key)
-            idx = meta.get("softkeyset_index")
-            if idx is not None and ref >= best_ref:
-                best_ref = ref
-                best_idx = idx
-        return best_idx if best_idx is not None else state.selected_softkey_set
-
     def _refresh_softkey_actions(self):
+        from utils.softkeys import ui_softkey_context
+
         labels = []
         bindings = []
 
-        keys = self.client.state.get_current_softkeys(self._ui_softkey_set())
+        sk_set, valid_mask = ui_softkey_context(self.client.state)
+        keys = self.client.state.get_current_softkeys(sk_set, valid_key_mask=valid_mask)
 
         for lab in keys:
             label = lab[0]
@@ -595,6 +580,10 @@ class ConsoleApp:
         server = getattr(self.client.state, "server", "")
         reg = "Registered" if self.client.state.is_registered.is_set() else "Reconnecting…"
         header = f"{dn}  |  {model}  |  CUCM: {server}  |  {reg}"
+        line_row = getattr(self.client.state, "lines", {}).get(str(self.line), {}) or {}
+        line_dn = (line_row.get("line_dir_number") or "").strip()
+        if line_dn:
+            header = f"{header}  |  L{self.line}: {line_dn}"
         stdscr.addstr(0, 1, header[: max(1, left_w - 2)])
 
         # Prompt / status (left area only)
@@ -603,10 +592,11 @@ class ConsoleApp:
 
         # Active call summary
         try:
-            active = bool(getattr(self.client.state, "active_call", False))
-            active_line = getattr(self.client.state, "active_call_line_instance", None)
-            calls = getattr(self.client.state, "calls", {}) or {}
-            call_info = calls.get(str(active_line), {}) if active_line else {}
+            active = bool(getattr(self.client.state, "active_calls_list", None))
+            call_info = self._primary_call_info()
+            active_line = call_info.get("line_instance") or getattr(
+                self.client.state, "active_call_line_instance", None
+            )
             remote = call_info.get("remote_name") or call_info.get("called_party") or ""
             call_ref = call_info.get("call_reference", "")
             stdscr.addstr(4, 2, f"Call: {'ACTIVE' if active else '—'}   Line: {active_line or '-'}   Ref: {call_ref or '-'}"[:left_w-4])
@@ -734,6 +724,12 @@ class ConsoleApp:
         if refs:
             return str(refs[0])
         return None
+
+    def _primary_call_info(self) -> dict:
+        key = self._current_call_key()
+        if key:
+            return (getattr(self.client.state, "calls", None) or {}).get(str(key), {}) or {}
+        return {}
 
     def _find_button_by_type_name(self, type_name):
         template = getattr(self.client.state, "button_template", {}) or {}
