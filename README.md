@@ -42,6 +42,7 @@ pytest -m "not integration" -v --no-audio
 | Topic | Doc |
 |-------|-----|
 | Simulator scenarios (IVR, 3 phones, admin reset) | [docs/lab-cookbook.md](docs/lab-cookbook.md) |
+| CM 3.x labs (cm31, cm33 — 7960/7970) | [docs/lab-cm3x.md](docs/lab-cm3x.md) |
 | Softkey hold/resume (cm31/33/41/43) | [docs/lab-softkey-hold.md](docs/lab-softkey-hold.md) |
 | CM2 button phones (Stimulus hold/transfer) | [docs/lab-cm2-buttons.md](docs/lab-cm2-buttons.md) |
 

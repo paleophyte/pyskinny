@@ -1,9 +1,33 @@
 # pyskinny — project TODO
 
 Living backlog for lab work, protocol gaps, tests, and polish.  
-**Last reviewed:** 2026-06-03 (consult xfer regression; TODO blocked/unblocked pass).
+**Last reviewed:** 2026-06-03 (TODO user checklist + `docs/lab-cm3x.md`).
 
 For how to run things today, see [README.md](README.md) and the lab docs linked there. Always git add / commit when making any changes!
+
+---
+
+## Your checklist (lab — you only)
+
+One list, priority order. Check off here when done; note the date or filename inline.
+
+- [ ] **Hold pcap (cm31 or cm33)** — During a live call: SoftKey **Hold**, wait ~3 s, **Resume**, hang up. Filter `host <CM_IP> and tcp port 2000`. Unblocks `test_hold_and_resume` skip (prompt shows `Hold` but `call_state` stays Connected). Suggested name: `cm31_hold.pcapng` / `cm33_hold.pcapng`.
+- [ ] **Fresh register captures (cm31 + cm33)** — Re-grab registration with **current pyskinny** (sends **FeatureStatReq `0x0034`**). Existing `cm31_register.pcapng` / `cm33_register.pcapng` predate that change (phone sent `0x002D` on the wire; no **FeatureStatRes `0x011F`** in fixtures). Capture while `run_console` registers, through **TimeDateRes**, then run `python -m utils.extract_cucm_capture_fixtures` to refresh `cm31_reg` / `cm33_reg` groups. See [docs/lab-cm3x.md](docs/lab-cm3x.md#registration-captures).
+- [ ] **Conference (T3 + P7)** — Manual: CLI `phone conference <dn>` or macro on a lab CM. Report which lab works. Optional pcap: `cm41_conference.pcapng` (A–B connected → Confrn → dial C → answer → Confrn). Unblocks live `test_conference`.
+- [ ] **Full integration sweep (T1 + F3)** — `pytest tests/test_integration_live.py -m integration -v --no-audio` (no consoles on same MACs). Save output to `logs/integration_all_labs.log`; note pass/fail/skip per lab.
+- [ ] **Console hangup (T4)** — On a live call: **F1/e** vs **Space** vs **q** on cm2 and cm41. Which clears the CM call cleanly?
+- [ ] **Multi-call (T5)** — Connect → **h** hold → second call to third DN → swap with ↑↓ → hang up each. Any stale call refs in the console log?
+- [ ] **cm41/cm43 consulted transfer** — Only if you care about 79xx consult (cm2/cm31/cm33 already pass). Debug why consult leg stalls, or capture softkey consult xfer on cm41/cm43 (`consult_xfer.pcap` was CM2 Stimulus only).
+- [ ] **Park (P8)** — Configure call park on a lab CM, then park + retrieve; capture `cm*_park.pcapng`.
+- [ ] **CM2 two-way audio (P9, optional)** — Call with `--rtp-tone` or `--rtp-mic`; note if you heard remote party. `cm2_media.pcapng`.
+- [ ] **Inbound ring / SetRinger (P10, optional)** — Ring-in to 79xx with lamps + ringer messages for sim ring path work.
+- [ ] **RTP note (F4, optional)** — UDP pcap for same call as P3, or confirm “hear remote OK with default RX monitor”.
+- [ ] **`git push`** — When `main` is ahead of origin after a lab session.
+- [ ] **Integration workflow (optional)** — Run GitHub **Integration (lab CallManager)** on self-hosted runner after T1 passes locally.
+
+**Already done (no action):** T6/T7/T8 diagnostics; P3/P4 call pcaps + fixes; P6 consult regression; register fixtures from older pcaps; A1 endpoints; A5 cm43 reachability; A4 licenses.
+
+Drop new pcaps in repo root or `tools/` (gitignored by default).
 
 ---
 
@@ -14,250 +38,95 @@ For how to run things today, see [README.md](README.md) and the lab docs linked 
 | **Live integration** (cm2, cm31, cm33, cm41, cm43) | Register, connect/hangup, blind transfer, consulted transfer green on cm2/cm31/cm33; **hold skips cm31/cm33**; **consult skips cm41/cm43** |
 | **CM2 button phones** | Stimulus hold (3), transfer (4), SetLamp tracking, synthetic `cm2-N` refs |
 | **Softkey phones** (79xx) | SoftKey hold/resume/transfer, template diagnostics |
+| **CM3.x** (cm31, cm33) | FeatureStat, OpenReceiveChannel parse, register capture fixtures — see [docs/lab-cm3x.md](docs/lab-cm3x.md) |
 | **Simulator** | Calls, IVR macro, blind/consult transfer, conference, admin UI, capture regressions |
 | **Console** | `h` hold, `t` transfer, default RX monitor / silent TX, `--rtp-mic` for real mic |
 | **CI** | Unit tests on push (Py 3.11/3.12); integration workflow is manual `workflow_dispatch` on self-hosted runner |
 
 ---
 
-## Must — correctness / lab blockers
-
-- [x] Fix sounddevice.PortAudioError: Error querying device -1 when running pyskinny with default options (such as python -m examples.run_console -vvvv --server 10.0.0.181 --device 222233334444 --model 7960). Should log error or warning and only send silence.
-- [x] Tested on CM31, could affect other versions. I don't see the extension number printed on the screen. This should be shown somewhere since it would normally show up on the actual screen. This would obviously not apply to like first gen phones that didn't show this on the screen.
-- [x] Tested on CM31, could affect other versions. With run_console, using softkey to get a new line, and then pressing space (hook), the call appears to hang up, but still shows "Call: ACTIVE"
-- [x] **P3 / cm31 call teardown:** `CloseReceiveChannel (0x0106)` with **8-byte** payload crashes parse (`struct.unpack` expects 12 bytes). Log/traceback in `P3.debug.txt`; wire in `P3.pcapng`.
-- [x] **P4 / cm33 inbound ring:** On **RingIn**, CM sends `SelectSoftKeys` but `run_console` still shows only `EndCall` (no **Answer**). Template has Answer (T7). See `P4.debug.txt` / `cm33_call.pcapng`.
-- [ ] **(blocked — you)** **T1/T2 cm31+cm33 hold:** `test_hold_and_resume` skips — SoftKey Hold sent, prompt becomes `Hold`, but `call_state` stays **Connected** (last update `SetLamp`). Need **hold pcap** (during Hold/Resume) or SetLamp `lamp_mode` trace on cm31/cm33. Ref: `T1.debug.txt`, `T2.debug.txt`.
-- [ ] **(blocked — you)** **T1 cm41+cm43 consulted transfer:** `test_consulted_transfer` skips — consult leg does not complete on SEP222233334444. cm31/cm33/cm2 pass. Need live debug or **79xx consult xfer pcap** on cm41/cm43 (P6 was CM2 Stimulus only). Ref: `T1.debug.txt`.
-
-### Skinny messages still incomplete on the **client**
-
-These show up as `Unhandled message ID` in logs (`dispatcher.py`) or are mis-wired.
-
-| ID | Name | Notes |
-|----|------|--------|
-| ~~**0x011F**~~ | ~~FeatureStatRes~~ | **Done** — recv handler in `messages/capabilities.py`; client sends **FeatureStatReq (0x0034)** in registration. |
-| ~~**0x0034**~~ | ~~FeatureStatReq decorator bug~~ | **Done** — bogus `@register_handler(0x0034)` removed from `send_open_receive_channel_ack()`. |
-| **0x0105** | OpenReceiveChannel | **Parse fix (done)** for CM3.x short payloads. **Open:** do not store `compression_type` for RTP RX — decoder auto-detects PT 0/8. **(blocked — you, optional)** explicit PT only if we need it beyond auto-detect; `P3.pcapng` exists. |
-| **0x0000** | KeepAliveReq | CM may send keepalive; client has **KeepAliveAck** recv (**0x0100**) but no recv on **0x0000** (usually benign). **Unblocked** — add recv → reply with KeepAliveAck. |
-
-### CM3.x–specific (cm31 = 7960, cm33 = 7970)
-
-- [x] **Add `FeatureStatRes` handler** — no-op or parse; suppress unhandled warnings during registration.
-- [x] **Send `FeatureStatReq (0x0034)`** after softkey/button stats (match `cm_cap.pcapng` registration order); confirm on cm31 + cm33.
-- [x] **Capture regression fixtures (register)** — `cm31_reg` / `cm33_reg` in `tests/fixtures/cucm_frames.json` from `cm31_register.pcapng` / `cm33_register.pcapng`; regen via `python -m utils.extract_cucm_capture_fixtures`. **(blocked — you)** call/hold clips still needed for full CM3.x call fixtures.
-- [ ] **Document CM3.x quirks** — short `docs/lab-cm3x.md` or section in README (OpenReceiveChannel length, FeatureStat, 7960 vs 7970 model enum). **Unblocked** (can draft from existing pcaps + T6 logs).
-
-### Protocol / state
-
-- [x] **Remove `@register_handler(0x0034)` from `send_open_receive_channel_ack`** — it is a send helper, not an inbound handler.
-- [ ] **`CallSelectStatRes (0x0130)`** — handler logs only; does not update call state. **(blocked — you)** needs multi-call or transfer pcap showing state impact (T5 may surface this).
-- [ ] **`OpenReceiveChannel` → RTP RX** — optionally apply `compression_type` from message instead of inferring PT from first packets. **(blocked — you, optional)** unless RX decode misbehaves on a specific lab call.
-
----
-
-## Should — tests, docs, lab hygiene
-
-### Integration tests
-
-- [ ] **(blocked — you)** **Live conference test** — `client.conference()` works in sim; no `test_conference` in `test_integration_live.py` yet. Needs **T3** manual run + **P7** conference pcap to automate confidently.
-- [ ] **Periodic full-lab run** — script or CI note: `pytest tests/test_integration_live.py -m integration -v --no-audio` (all five labs; stop consoles first). **Unblocked** (docs/script only).
-- [x] **Consult transfer pcap regression** — `tests/test_consult_xfer_capture.py` (wire hex from local `consult_xfer.pcap`).
-- [ ] **Fail vs skip** — integration helpers use `pytest.skip` when CM doesn’t complete transfer/hold; consider hard `fail` for labs you expect green every run.
-
-### Documentation drift
-
-- [x] **`docs/lab-softkey-hold.md`** — cm2 Stimulus 3 hold + cross-link `lab-cm2-buttons.md`; note cm31/cm33 hold skip.
-- [ ] **README roadmap** — keep in sync with this file when closing items.
-- [ ] **PowerShell env var note** — already in README; worth one line in `test_integration_live.py` docstring (done).
-
-### Simulator / captures
-
-- [ ] **CM31 profile in simulator** — optional distinct template payloads (today: `modern` vs `legacy7912` vs `cm2`; cm31 uses 7960 enum).
-- [ ] **(blocked — you)** **Ring path** — CUCM uses `SetRinger` + lamps; sim still leans on `StartTone`; needs **P10** inbound-ring pcap if hardware ring matters.
-
-### UX / console
-
-- [ ] **(blocked — you)** **EndCall (F1 / `e`) vs Space (on-hook)** — verify on live CM after hangup fixes (**T4**).
-- [ ] **(blocked — you)** **Multi-call UI** — second call while held works in code; needs guided live test (**T5**).
-- [ ] **Conference softkey / F-key** — no console shortcut (CLI `phone conference` exists). **Unblocked** once conference flow is validated (**T3**); can add `c` binding without pcap.
-
-### Code quality
-
-- [ ] **Unhandled message policy** — log once per ID per session at WARNING, or aggregate at end of call, instead of per-packet spam. **Unblocked.**
-- [ ] **`HookFlash (0x0008)`** — named, no handler; CM2 may use it on some builds (we use Stimulus 3 for hold).
-- [ ] **Python 3.14** — you run 3.14 locally; CI is 3.11/3.12 — add 3.14 to classifiers/matrix when convenient.
-
----
-
-## Could — features & improvements
-
-### Telephony
-
-- [ ] **SIP phone support** (README “Later”) — separate stack from SCCP.
-- [ ] **G.729 / GSM / wideband encode-decode** — registry entries exist; TX is silence, RX limited to G.711 today.
-- [ ] **(blocked — you)** **Park, pickup, directed transfer** — not implemented; **P8** park not configured on lab CMs yet.
-- [ ] **MOH / announce** — hold works; music/announce streams not modeled.
-
-### IVR / audio lab
-
-- [ ] **Windows TTS helper** — one-shot script using `System.Speech` → 8 kHz WAV for `PLAY` / `--rtp-wav` (discussed in chat; not in repo).
-- [ ] **IVR prompt library** — checked-in `media/` samples + macro examples for sim `--ivr-dn`.
-- [ ] **(blocked — you)** **Two-way RTP on CM2** — default silent TX; confirm `--rtp-tone` / loopback on Virtual30 (**P9**).
-
-### Tooling
-
-- [ ] **`tools/probe_cm3_openrx.py`** — was written during cm31 debug; not in tree — restore or fold into `utils/dump_*` if still useful.
-- [ ] **Wireshark plugin / dissector alignment** — compare unknown IDs against Skinny dissector for CM 3.1 vs 4.1.
-- [ ] **AXL / AST / phone CGI** — mature; could use more examples in README for your lab DNs.
-
-### Packaging / ops
-
-- [ ] **Push `main`** after lab sessions (branch often ahead of origin).
-- [ ] **Self-hosted integration runner** — document setup, MAC/device exclusivity, license exhaustion (50-device limit you hit).
-- [ ] **Optional scheduled integration** — weekly `workflow_dispatch` or cron on lab runner.
-
----
-
-## Quick reference — your CM labs
+## Quick reference — CM labs
 
 | Lab | IP | Model | Identity | Notes |
 |-----|-----|-------|----------|--------|
-| cm2 | 10.0.0.11 | Virtual30SPplus | pyskinny01–03 | Button template, Stimulus hold/xfer |
-| cm31 | 10.0.0.181 | **7960** | SEP + MAC 444–446 | CM3.x OpenReceiveChannel; FeatureStat done; hold test skips |
-| cm33 | 10.0.0.182 | 7970 | SEP + MAC 444–446 | Same CM3.x family as cm31 |
-| cm41 | 10.0.0.180 | 7970 | SEP + MAC 444–446 | Primary dev lab historically |
+| cm2 | 10.0.0.11 | Virtual30SPplus | pyskinny01–03 | [lab-cm2-buttons.md](docs/lab-cm2-buttons.md) |
+| cm31 | 10.0.0.181 | **7960** | SEP + MAC 444–446 | CM 3.1 — [lab-cm3x.md](docs/lab-cm3x.md) |
+| cm33 | 10.0.0.182 | **7970** | SEP + MAC 444–446 | CM 3.3 — same family as cm31 |
+| cm41 | 10.0.0.180 | 7970 | SEP + MAC 444–446 | CM 4.1 |
 | cm43 | 100.69.0.100 | 7970 | SEP + MAC 444–446 | CM 4.3 |
-
-**Single-lab pytest:**
 
 ```powershell
 pytest tests/test_integration_live.py -m "integration and cm31" -v --no-audio
-```
-
-**Diagnostics:**
-
-```powershell
-python -m utils.dump_softkeys --config    # 79xx
-python -m utils.dump_buttons --config   # CM2
+python -m utils.dump_softkeys --server 10.0.0.181 --mac 222233334444 --model 7960
+python -m utils.dump_buttons --server 10.0.0.11 --device-name pyskinny01 --model Virtual30SPplus
 ```
 
 ---
 
-## Suggested next steps
+## Agent backlog (repo / code — not blocked on you)
 
-### Unblocked — agent / repo work (no new pcaps required)
+### Must — correctness
 
-1. **`docs/lab-cm3x.md`** — short CM3.x quirks doc (FeatureStat, OpenReceiveChannel, 7960 vs 7970).
-2. **KeepAliveReq (0x0000) recv** — reply with KeepAliveAck (benign protocol hygiene).
-3. **Unhandled message log dedup** — once per ID per session.
-4. **Periodic full-lab run** — one-liner in README or small script under `tools/`.
+- [ ] **cm31/cm33 hold integration** — blocked on **hold pcap** in your checklist.
+- [ ] **cm41/cm43 consult integration** — blocked on your checklist.
+- [x] PortAudio device -1 / silent default TX
+- [x] Extension DN in console header (LineStatRes)
+- [x] On-hook stale `Call: ACTIVE`
+- [x] CloseReceiveChannel 8-byte payload (P3)
+- [x] Ring-in Answer softkeys (P4)
+- [x] FeatureStatReq / FeatureStatRes registration
+- [x] Consult xfer pcap regression (`test_consult_xfer_capture.py`)
+- [x] CM3.x register fixtures (`cm31_reg` / `cm33_reg` in `cucm_frames.json`)
 
-### Blocked — waiting on you (lab artifacts or manual runs)
+**Protocol gaps (code):**
 
-| Item | What we need |
-|------|----------------|
-| cm31/cm33 **hold** fix | Hold pcap on cm31/cm33, or SetLamp trace during Hold (**T1/T2**) |
-| cm41/cm43 **consult** integration | Why consult leg stalls on 79xx; optional cm41 consult pcap |
-| **Conference** integration test | **T3** does it work? + **P7** 3-way pcap |
-| **Park / pickup** | **P8** — configure call park on a lab CM first |
-| **CM2 two-way audio** | **P9** media pcap + “heard remote?” note |
-| **SetRinger / ring path** | **P10** optional inbound-ring pcap |
-| **Multi-call / hangup UX** | **T4**, **T5** manual console reports |
-| **Full integration sweep log** | **T1** → save **F3** `logs/integration_all_labs.log` |
-| **RTP decode edge case** | **F4** only if G.711 auto-detect fails on a real call |
+| ID | Name | Status |
+|----|------|--------|
+| ~~0x011F~~ | FeatureStatRes | Done |
+| ~~0x0034~~ | FeatureStatReq decorator bug | Done |
+| 0x0105 | OpenReceiveChannel | Parse done; optional `compression_type` → RTP RX |
+| 0x0000 | KeepAliveReq | Add recv → reply KeepAliveAck |
+| 0x0130 | CallSelectStatRes | Logs only; state update needs multi-call pcap (T5) |
 
----
+### Should — tests, docs, hygiene
 
-## Your action items — captures, tests, and lab work
+- [x] `docs/lab-softkey-hold.md` — cm2 Stimulus 3 + cm31/cm33 hold note
+- [x] `docs/lab-cm3x.md` — CM3.x quirks
+- [ ] Periodic full-lab run script or README one-liner
+- [ ] Unhandled message log dedup (once per ID per session)
+- [ ] Fail vs skip policy for integration tests
+- [ ] README roadmap sync
+- [ ] Conference console shortcut (`c`) after T3 validates flow
+- [ ] CM31 profile in simulator (optional)
 
-Things only you can do in the lab. Each item points back to the backlog line(s) it unblocks.  
-Drop pcaps in repo root or `tools/` (they are gitignored — share via path name or attach to a commit if you want them in-tree).
+### Could — later
 
-### Packet captures to grab
-
-| # | Capture | How | Unblocks (TODO lines) | Ref File(s) / Notes |
-|---|---------|-----|------------------------|------------------------------------------|
-| P1 | **cm31 registration** | register through `TimeDateRes` | L48 | **Received** — `cm31_register.pcapng` (repo root). Fixtures not extracted yet. |
-| P2 | **cm33 registration** | same on **10.0.0.182** (7970) | L48 | **Received** — `cm33_register.pcapng` (repo root). |
-| P3 | **cm31 connect call** | OpenReceiveChannel + StartMedia | L41 | **Received + fixed** — `P3.pcapng`, `P3.debug.txt`; CloseReceiveChannel parse fixed. |
-| P4 | **cm33 connect call** | inbound ring + answer | L29 | **Received + fixed** — `cm33_call.pcapng`, `P4.debug.txt`; ring-in Answer softkeys fixed. |
-| P5 | **FeatureStat only** | 0x0034 + 0x011F clip | — | **Covered** by P1/P2 + FeatureStat code done. |
-| P6 | **Consult transfer (CM2)** | answer C before 2nd Transfer | L65 | **Done** — `consult_xfer.pcap` → `tests/test_consult_xfer_capture.py`. |
-| P7 | **Conference** | 3-way Confrn flow | L63 | **(blocked)** — need capture + **T3** |
-| P8 | **Park** | park + retrieve | L99 | **(blocked)** — park not configured on lab CMs |
-| P9 | **CM2 two-way audio** | `--rtp-tone` / `--rtp-mic` | L106 | **(blocked)** — planned |
-| P10 | **Ring / SetRinger** (optional) | inbound ring lamps + ringer | L77 | **(blocked)** — optional |
-
-**Existing captures we already use:** `tools/cm2_register.pcapng`, `blind_xfer.pcap`, `consult_xfer.pcap` (local), `vphone_hold_unhold.pcap`, `pgm_exit.pcap`, `cm_cap.pcapng` (CM4.1 register), `cm_call_from_pyskinny_to_7912.pcapng`.
+- SIP phone support; G.729 TX; park/pickup (P8); MOH; Windows TTS; Wireshark dissector alignment; Python 3.14 in CI matrix; self-hosted runner docs.
 
 ---
 
-### Tests for you to run and report back
+## Capture & log reference
 
-Run with **no consoles** holding the same MAC/device names.
+| ID | Item | Status |
+|----|------|--------|
+| P1/P2 | cm31/cm33 register (older) | Received — fixtures extracted; **re-capture with current pyskinny** in your checklist |
+| P3/P4 | cm31/cm33 connect call | Received + fixed |
+| P5 | FeatureStat clip | Superseded by fresh register re-capture |
+| P6 | CM2 consult xfer | Done → `test_consult_xfer_capture.py` |
+| P7 | Conference | Open — your checklist |
+| P8–P10 | Park, CM2 media, SetRinger | Open / optional — your checklist |
+| T6–T8 | Register logs, dump_softkeys/buttons | Done |
+| F1–F2 | FeatureStat logs, consult pcap | Done |
+| F3–F4 | Integration sweep log, RTP | Open — your checklist |
 
-| # | Command / action | Report | Related (TODO lines) | Ref File(s) / Notes |
-|---|----------------|--------|---------------------|------------------------------------------|
-| T1 | Full integration sweep: `pytest tests/test_integration_live.py -m integration -v --no-audio` | Pass/fail/skip count **per lab** (cm2, cm31, cm33, cm41, cm43) | L14, L56–L57 | T1.debug.txt |
-| T2 | Single lab sanity after CM changes: `pytest … -m "integration and cm31"` (repeat for cm33) | Green or paste skip reason | L119–L127, L38–L40 | T2.debug.txt |
-| T3 | **Conference** manual: CLI `phone conference <dn>` or macro; then say if we should automate | Works? which lab? | L55, L75 | |
-| T4 | **Console hangup**: on a live call, try **F1/e** vs **Space** vs **q** | Which clears CM call cleanly on cm2 and cm41? | L73 | |
-| T5 | **Multi-call**: connect → **h** hold → place second call to third DN → swap with ↑↓ → hang up each | Any stale refs in console log pane? | L74 | |
-| T6 | Register with `-vvv` on **cm31** and **cm33**; search log for `Unhandled message ID` | List any **0x….** hex IDs not in our table | L31, L87 | **Done** — `T6.CM31.debug.txt`, `T6.CM33.debug.txt` (no Unhandled) |
-| T7 | `dump_softkeys` on cm31 | Hold/Resume/Transfer/Confrn in template | L16 | **Done** — `T7.debug.txt` |
-| T8 | `dump_buttons` on cm2 | Virtual30 button map | L15 | **Done** — `T8.debug.txt` |
-| T3 | **Conference** manual | Works? which lab? | L63 | **(blocked — you)** |
-| T4 | **Console hangup** F1/e vs Space vs q | Which clears CM cleanly? | L81 | **(blocked — you)** |
-| T5 | **Multi-call** hold → 2nd call → swap | Stale refs in log? | L82 | **(blocked — you)** |
-
----
-
-### CM / device admin (one-time checks)
-
-| # | Task | Related (TODO lines) | Ref File(s) / Notes |
-|---|------|----------------------|------------------------------------------|
-| A1 | Confirm **three endpoints** per lab (…444, …445, …446) exist and DNs are routable for transfer tests | L14, L56 | Checked all and confirmed. |
-| A2 | **Hold/MOH** enabled on lab lines (cm31–cm43 softkey; cm2 line MOH if hold test ever skips) | L38, L62 | |
-| A3 | **Softkey template** on 79xx: standard 7960/7970 template with Hold/Resume/Transfer | L16, L62 | |
-| A4 | Note when **license exhaustion** happens (50 devices) — which CM, after how many clients | L109 | Added another 1000 licenses, so this shouldn't be a common problem now |
-| A5 | cm43: confirm **100.69.0.100** reachable from your test PC (VPN/firewall) | L122 | Confirmed it's reachable from here |
-
----
-
-### Files / logs to hand off
-
-| # | What | Related (TODO lines) |
-|---|------|----------------------|
-| F1 | cm31/cm33 register log with FeatureStat / Unhandled | L46–L47 | **Done** — T6 logs clean |
-| F2 | `consult_xfer.pcap` → regression test | L65 | **Done** — `test_consult_xfer_capture.py` |
-| F3 | **T1** full sweep log | L64 | **(blocked — you)** |
-| F4 | RTP pcap or “hear remote OK” note | L41, L55, L106 | **(blocked — you, optional)** |
-
----
-
-### Ops (when you have time)
-
-| # | Task | Related (TODO lines) |
-|---|------|----------------------|
-| O1 | `git push` after lab sessions if `main` is ahead of origin | L108 |
-| O2 | Optional: run GitHub **Integration (lab CallManager)** workflow on self-hosted runner after T1 passes locally | L19, L110 |
-
----
-
-### Suggested order for you (blocked items only)
-
-1. **Hold pcap** on cm31 or cm33 (during Hold + Resume) — unblocks hold integration skip.  
-2. **T3 + P7** — conference manual test + pcap if you want `test_conference` in integration.  
-3. **T1 + F3** — full five-lab sweep log after next CM session.  
-4. **T4 / T5** — console hangup and multi-call UX when you have two calls handy.  
-5. **cm41/cm43 consult debug** — only if you care about consult on 79xx (cm2/cm31/cm33 already pass).  
+**Fixtures in repo:** `tests/fixtures/cucm_frames.json` (regen: `python -m utils.extract_cucm_capture_fixtures`).  
+**Local/gitignored pcaps:** `blind_xfer.pcap`, `consult_xfer.pcap`, `vphone_hold_unhold.pcap`, `cm31_register.pcapng`, `cm33_register.pcapng`, etc.
 
 ---
 
 ## How to update this file
 
-- Move items to done by striking through or deleting when merged.
-- Add new rows to the message table when you see `Unhandled message ID: 0x....` in console logs (`-vvv`).
-- After a full lab sweep, note date + pass/fail counts at the top.
-- Check off **Your action items** (P/T/A/F/O) when done and note the date inline.
+- Check off **Your checklist** when you complete lab work.
+- Move agent items to done when merged.
+- Add unknown `Unhandled message ID: 0x....` from `-vvv` logs to the protocol table.
+- After a full lab sweep, bump **Last reviewed** and note T1 results at the top of your checklist.

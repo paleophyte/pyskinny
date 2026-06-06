@@ -24,7 +24,7 @@ You should see `Hold` and `Resume` in `template_labels`, and `Hold` in `connecte
 
 On **CM 2.x** (button phones, no softkeys), hold uses **Stimulus 3** on the line button, not SoftKeyEvent. pyskinny sends that from console `h` when no softkey template is present. See [lab-cm2-buttons.md](lab-cm2-buttons.md) for the Virtual30 button map and hold capture (`vphone_hold_unhold.pcap`).
 
-**cm31 / cm33:** integration `test_hold_and_resume` may still **skip** if CM reports `Hold` in the display prompt but `call_state` stays Connected (SetLamp-only update). A hold pcap during SoftKey Hold helps debug that path.
+**cm31 / cm33:** integration `test_hold_and_resume` may still **skip** if CM reports `Hold` in the display prompt but `call_state` stays Connected (SetLamp-only update). A hold pcap during SoftKey Hold helps debug that path. See [lab-cm3x.md](lab-cm3x.md) for CM 3.x registration and fixture notes.
 
 ## Run integration test
 
