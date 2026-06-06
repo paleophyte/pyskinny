@@ -6,7 +6,9 @@ import subprocess
 from pathlib import Path
 
 TSHARK = r"c:\Program Files\Wireshark\tshark.exe"
-PCAP = Path(__file__).resolve().parents[1] / "cm_cap.pcapng"
+from utils.lab_paths import lab_pcap
+
+PCAP = lab_pcap("cm_cap.pcapng")
 OUT = Path(__file__).resolve().parents[1] / "simulator" / "cucm_legacy_assets.py"
 
 

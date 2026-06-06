@@ -33,7 +33,7 @@ Registration completes when CM sends **TimeDateRes (`0x0094`)**; pyskinny then m
 
 After button/line stat requests, pyskinny sends **FeatureStatReq (`0x0034`, line 1)**. CM answers with **FeatureStatRes (`0x011F`)**. Handlers live in `messages/capabilities.py`.
 
-Older lab pcaps (`cm31_register.pcapng`, `cm33_register.pcapng`) were captured **before** the client sent `0x0034` (the phone sent `0x002D` on the wire instead). Those captures are still useful for SoftKeyTemplate, LineStat, etc., but they do **not** include FeatureStat on the wire. For fixture regression of the current sequence, re-capture registration with today's pyskinny (see [Registration captures](#registration-captures) below).
+Older lab pcaps (`debugs/cm31_register.pcapng`, `debugs/cm33_register.pcapng`) were captured **before** the client sent `0x0034` (the phone sent `0x002D` on the wire instead). Those captures are still useful for SoftKeyTemplate, LineStat, etc., but they do **not** include FeatureStat on the wire. For fixture regression of the current sequence, re-capture registration with today's pyskinny (see [Registration captures](#registration-captures) below).
 
 ### LineStatRes and extension display
 
@@ -87,15 +87,15 @@ Only one SCCP client per MAC at a time — stop consoles before running tests.
 
 Committed wire hex from registration pcaps lives in `tests/fixtures/cucm_frames.json`:
 
-- `cm31_reg` — from `cm31_register.pcapng`
-- `cm33_reg` — from `cm33_register.pcapng`
+- `cm31_reg` — from `debugs/cm31_register.pcapng`
+- `cm33_reg` — from `debugs/cm33_register.pcapng`
 
 Tests: `tests/test_cm3x_register_capture.py`.
 
 Regenerate after new pcaps (requires tshark):
 
 ```powershell
-# pcaps at repo root
+# pcaps under debugs/
 python -m utils.extract_cucm_capture_fixtures
 pytest tests/test_cm3x_register_capture.py -v
 ```
@@ -115,7 +115,7 @@ tshark -i <iface> -f "host 10.0.0.181 and tcp port 2000" -w cm31_register.pcapng
 1. Stop any console on that MAC.
 2. Start the capture.
 3. Run `run_console` (or pytest register test) through **TimeDateRes**.
-4. Stop capture; replace `cm31_register.pcapng` / `cm33_register.pcapng` at repo root.
+4. Stop capture; save as `debugs/cm31_register.pcapng` / `debugs/cm33_register.pcapng`.
 5. Run `python -m utils.extract_cucm_capture_fixtures` and commit the updated JSON + tests if bytes changed.
 
 In Wireshark, confirm phone→CM **FeatureStatReq `0x0034`** and CM→phone **FeatureStatRes `0x011F`** appear before **TimeDateReq**.

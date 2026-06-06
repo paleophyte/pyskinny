@@ -16,7 +16,7 @@ You should see four **Line** buttons plus feature keys (Call Park, Redial, Speed
 
 ## Hold on button phones
 
-The template usually does **not** include a dedicated Hold button. On Virtual30, the hold key sends **Stimulus type 3** on the line (toggle hold and resume). See `vphone_hold_unhold.pcap` at the repo root.
+The template usually does **not** include a dedicated Hold button. On Virtual30, the hold key sends **Stimulus type 3** on the line (toggle hold and resume). See `debugs/vphone_hold_unhold.pcap`.
 
 ```python
 client.press_hold()    # Stimulus(3, line) — same packet to resume
@@ -53,9 +53,9 @@ On Virtual30 there is no **Transfer** template button — use **Stimulus 4** (`p
 
 Console: **`t`** starts transfer; dial the target with digit keys; **`t`** again to complete (blind or consult). CLI: `phone transfer 1091` after the first Transfer, or macro `TRANSFER 1091`.
 
-**Blind transfer** (`blind_xfer.pcap`): Stimulus **4** → dial target (e.g. `1091`) → Stimulus **4** again → optional OnHook.
+**Blind transfer** (`debugs/blind_xfer.pcap`): Stimulus **4** → dial target (e.g. `1091`) → Stimulus **4** again → optional OnHook.
 
-**Consult transfer** (`consult_xfer.pcap`): same phone TX as blind; CM sends **CallInfo** + **StartTone** (alerting) after the last dial digit while the consult leg rings, then the second Stimulus **4** completes the bridge.
+**Consult transfer** (`debugs/consult_xfer.pcap`): same phone TX as blind; CM sends **CallInfo** + **StartTone** (alerting) after the last dial digit while the consult leg rings, then the second Stimulus **4** completes the bridge.
 
 ### Audio / console errors
 
@@ -63,6 +63,6 @@ Default `run_console` TX is **silence** (hear remote party via RX monitor). Use 
 
 `compression_type=160366308` on CM2 is registered as `CM2_G711UlawCap` (G.711 on the wire); TX stays silence unless you use `--rtp-tone` / `--rtp-mic`.
 
-### Shutting down (`pgm_exit.pcap`)
+### Shutting down (`debugs/pgm_exit.pcap`)
 
 Closing the virtual phone app sends **TCP FIN** on the Skinny socket — no extra Skinny message required. pyskinny should **`UnregisterReq`** on orderly quit (`q` in console); abrupt kill may leave a stale registration until CM times out.

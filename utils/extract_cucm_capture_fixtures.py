@@ -1,4 +1,4 @@
-"""Regenerate tests/fixtures/cucm_frames.json from repo-root pcaps (requires tshark)."""
+"""Regenerate tests/fixtures/cucm_frames.json from debugs/ pcaps (requires tshark)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from utils.lab_paths import ROOT, lab_pcap
 OUT = ROOT / "tests" / "fixtures" / "cucm_frames.json"
 TSHARK = os.environ.get("TSHARK", r"c:\Program Files\Wireshark\tshark.exe")
 
@@ -139,14 +139,14 @@ def main() -> int:
     out: dict[str, dict[str, str]] = {}
 
     for group, (pcap_name, frames) in FRAME_GROUPS.items():
-        pcap = ROOT / pcap_name
+        pcap = lab_pcap(pcap_name)
         if not pcap.is_file():
             print(f"missing {pcap}", file=sys.stderr)
             return 1
         out[group] = {str(n): frame_hex(pcap, n) for n in frames}
 
     for group, (pcap_name, cm_ip, keys) in CM3X_REG_GROUPS.items():
-        pcap = ROOT / pcap_name
+        pcap = lab_pcap(pcap_name)
         if not pcap.is_file():
             print(f"missing {pcap}", file=sys.stderr)
             return 1

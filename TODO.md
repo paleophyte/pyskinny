@@ -27,7 +27,7 @@ One list, priority order. Check off here when done; note the date or filename in
 
 **Already done (no action):** T6/T7/T8 diagnostics; P3/P4 call pcaps + fixes; P6 consult regression; register fixtures from older pcaps; A1 endpoints; A5 cm43 reachability; A4 licenses.
 
-Drop new pcaps in repo root or `tools/` (gitignored by default).
+Drop new pcaps and debug logs in **`debugs/`** (gitignored). CM2 register capture stays in `tools/cm2_register.pcapng`.
 
 ---
 
@@ -120,7 +120,7 @@ python -m utils.dump_buttons --server 10.0.0.11 --device-name pyskinny01 --model
 | F3–F4 | Integration sweep log, RTP | Open — your checklist |
 
 **Fixtures in repo:** `tests/fixtures/cucm_frames.json` (regen: `python -m utils.extract_cucm_capture_fixtures`).  
-**Local/gitignored pcaps:** `blind_xfer.pcap`, `consult_xfer.pcap`, `vphone_hold_unhold.pcap`, `cm31_register.pcapng`, `cm33_register.pcapng`, etc.
+**Local/gitignored (`debugs/`):** `blind_xfer.pcap`, `consult_xfer.pcap`, `vphone_hold_unhold.pcap`, `cm31_register.pcapng`, `*.debug.txt`, etc.
 
 ---
 

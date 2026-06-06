@@ -9,7 +9,9 @@ from pathlib import Path
 
 from utils.skinny_messages import get_message_name
 
-PCAP = Path(__file__).resolve().parents[1] / "cm_cap.pcapng"
+from utils.lab_paths import lab_pcap
+
+PCAP = lab_pcap("cm_cap.pcapng")
 TSHARK = r"c:\Program Files\Wireshark\tshark.exe"
 
 
