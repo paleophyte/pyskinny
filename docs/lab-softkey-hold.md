@@ -22,7 +22,9 @@ You should see `Hold` and `Resume` in `template_labels`, and `Hold` in `connecte
 3. Ensure the **Hold** feature is available on the line / device (no conflicting restriction).
 4. Reset the phone or restart SCCP so it pulls an updated template after changes.
 
-On **CM 2.x** (button phones, no softkeys), hold is not driven by SoftKeyEvent; use physical buttons — integration tests skip hold on `cm2`.
+On **CM 2.x** (button phones, no softkeys), hold uses **Stimulus 3** on the line button, not SoftKeyEvent. pyskinny sends that from console `h` when no softkey template is present. See [lab-cm2-buttons.md](lab-cm2-buttons.md) for the Virtual30 button map and hold capture (`vphone_hold_unhold.pcap`).
+
+**cm31 / cm33:** integration `test_hold_and_resume` may still **skip** if CM reports `Hold` in the display prompt but `call_state` stays Connected (SetLamp-only update). A hold pcap during SoftKey Hold helps debug that path.
 
 ## Run integration test
 

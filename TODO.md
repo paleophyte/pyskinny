@@ -45,7 +45,7 @@ These show up as `Unhandled message ID` in logs (`dispatcher.py`) or are mis-wir
 
 - [x] **Add `FeatureStatRes` handler** — no-op or parse; suppress unhandled warnings during registration.
 - [x] **Send `FeatureStatReq (0x0034)`** after softkey/button stats (match `cm_cap.pcapng` registration order); confirm on cm31 + cm33.
-- [ ] **Capture regression fixtures** for cm31/cm33 — **P1/P2 register pcaps received** (`cm31_register.pcapng`, `cm33_register.pcapng` at repo root); still need **call/hold** clips for full fixture set. **Unblocked:** extract register frames into `tests/fixtures/` like `cm2_register`.
+- [x] **Capture regression fixtures (register)** — `cm31_reg` / `cm33_reg` in `tests/fixtures/cucm_frames.json` from `cm31_register.pcapng` / `cm33_register.pcapng`; regen via `python -m utils.extract_cucm_capture_fixtures`. **(blocked — you)** call/hold clips still needed for full CM3.x call fixtures.
 - [ ] **Document CM3.x quirks** — short `docs/lab-cm3x.md` or section in README (OpenReceiveChannel length, FeatureStat, 7960 vs 7970 model enum). **Unblocked** (can draft from existing pcaps + T6 logs).
 
 ### Protocol / state
@@ -67,7 +67,7 @@ These show up as `Unhandled message ID` in logs (`dispatcher.py`) or are mis-wir
 
 ### Documentation drift
 
-- [ ] **`docs/lab-softkey-hold.md`** — still says *“integration tests skip hold on cm2”*; cm2 now uses Stimulus 3 (update or cross-link `lab-cm2-buttons.md`). **Unblocked.**
+- [x] **`docs/lab-softkey-hold.md`** — cm2 Stimulus 3 hold + cross-link `lab-cm2-buttons.md`; note cm31/cm33 hold skip.
 - [ ] **README roadmap** — keep in sync with this file when closing items.
 - [ ] **PowerShell env var note** — already in README; worth one line in `test_integration_live.py` docstring (done).
 
@@ -148,12 +148,10 @@ python -m utils.dump_buttons --config   # CM2
 
 ### Unblocked — agent / repo work (no new pcaps required)
 
-1. **`docs/lab-softkey-hold.md`** — fix outdated cm2 “skip hold” line; cross-link `lab-cm2-buttons.md`.
-2. **cm31/cm33 register fixtures** — extract wire hex from `cm31_register.pcapng` / `cm33_register.pcapng` into `tests/fixtures/`.
-3. **`docs/lab-cm3x.md`** — short CM3.x quirks doc (FeatureStat, OpenReceiveChannel, 7960 vs 7970).
-4. **KeepAliveReq (0x0000) recv** — reply with KeepAliveAck (benign protocol hygiene).
-5. **Unhandled message log dedup** — once per ID per session.
-6. **Periodic full-lab run** — one-liner in README or small script under `tools/`.
+1. **`docs/lab-cm3x.md`** — short CM3.x quirks doc (FeatureStat, OpenReceiveChannel, 7960 vs 7970).
+2. **KeepAliveReq (0x0000) recv** — reply with KeepAliveAck (benign protocol hygiene).
+3. **Unhandled message log dedup** — once per ID per session.
+4. **Periodic full-lab run** — one-liner in README or small script under `tools/`.
 
 ### Blocked — waiting on you (lab artifacts or manual runs)
 
