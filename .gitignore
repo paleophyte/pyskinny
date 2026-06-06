@@ -22,4 +22,5 @@ cucm/
 logs/
 simulator/tftp_assets/*
 *.pcap
+*.debug.txt
 
