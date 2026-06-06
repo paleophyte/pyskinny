@@ -22,6 +22,8 @@ For how to run things today, see [README.md](README.md) and the lab docs linked 
 
 ## Must — correctness / lab blockers
 
+- [x] Fix sounddevice.PortAudioError: Error querying device -1 when running pyskinny with default options (such as python -m examples.run_console -vvvv --server 10.0.0.181 --device 222233334444 --model 7960). Should log error or warning and only send silence.
+
 ### Skinny messages still incomplete on the **client**
 
 These show up as `Unhandled message ID` in logs (`dispatcher.py`) or are mis-wired.

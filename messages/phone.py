@@ -231,6 +231,7 @@ def _configure_rtp_sender(client, tx: RTPSender) -> None:
     play_mode = _effective_play_mode(client)
     if play_mode in ["silent", "silence"]:
         logger.debug("RTP Sending mode: Silence")
+        tx.send_silence()
     elif play_mode in ["mic", "microphone"]:
         logger.debug("RTP Sending mode: Microphone")
         tx.send_microphone()

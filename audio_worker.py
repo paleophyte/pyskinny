@@ -787,17 +787,22 @@ def _resolve_input_device(device=None):
     """Return a valid PortAudio input device index, or None if unavailable."""
     import sounddevice as sd
 
-    if device is not None:
-        try:
-            idx = int(device)
-        except (TypeError, ValueError):
-            return None
-        return idx if idx >= 0 else None
     try:
-        idx = int(sd.default.device[0])
+        if device is not None:
+            idx = int(device)
+        else:
+            idx = int(sd.default.device[0])
     except Exception:
         return None
-    return idx if idx >= 0 else None
+    if idx < 0:
+        return None
+    try:
+        info = sd.query_devices(idx)
+        if int(info.get("max_input_channels", 0)) < 1:
+            return None
+    except Exception:
+        return None
+    return idx
 
 
 class MicSource(_BaseSource):
@@ -839,15 +844,18 @@ class MicSource(_BaseSource):
                     dropped = self._buf.popleft()
                     total -= dropped.size
 
-        self._stream = sd.InputStream(
-            samplerate=self.sr,
-            channels=1,
-            dtype='float32',
-            device=device,
-            blocksize=self.blocksize,
-            callback=cb,
-        )
-        self._stream.start()
+        try:
+            self._stream = sd.InputStream(
+                samplerate=self.sr,
+                channels=1,
+                dtype='float32',
+                device=device,
+                blocksize=self.blocksize,
+                callback=cb,
+            )
+            self._stream.start()
+        except sd.PortAudioError as exc:
+            raise RuntimeError(f"PortAudio input unavailable: {exc}") from None
 
     def stop(self):
         self._stopped = True
